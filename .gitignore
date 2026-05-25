@@ -1,9 +1,15 @@
+# ─── Específico de este proyecto ─────────────────────────────────────────────
+
 # Entorno virtual
 venv/
 venv_Cesym_Chatbot/
+.venv
+env/
+ENV/
 
 # Variables de entorno
 .env
+.envrc
 
 # Archivos de datos reales (nunca subir al repo)
 data/raw/
@@ -16,22 +22,77 @@ logs/
 *.xls
 *.xlsm
 
-# Python
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
-*.egg-info/
-dist/
-build/
+# Memoria interna de Claude Code (herramienta local)
+memory/
 
 # Sistema
 .DS_Store
 Thumbs.db
 
-# VS Code (opcional, comenta si quieres versionar la config)
-.vscode/
+# ─── Python general ───────────────────────────────────────────────────────────
 
-# Memoria interna de Claude Code (herramienta local)
-memory/
+__pycache__/
+*.py[codz]
+*$py.class
+*.so
+*.manifest
+*.spec
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Installers
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Tests / coverage
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py.cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Jupyter
+.ipynb_checkpoints
+
+# pyenv
+# .python-version
+
+# mypy / pyre / pytype
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+.pytype/
+
+# Ruff
+.ruff_cache/
+
+# VS Code
+# .vscode/
+tempCodeRunnerFile.py
