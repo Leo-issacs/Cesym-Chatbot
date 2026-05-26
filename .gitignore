@@ -11,6 +11,9 @@ ENV/
 .env
 .envrc
 
+# Credenciales de Google (NUNCA subir al repo)
+.credentials/
+
 # Archivos de datos reales (nunca subir al repo)
 data/raw/
 data/backups/

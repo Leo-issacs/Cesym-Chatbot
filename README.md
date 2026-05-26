@@ -70,22 +70,55 @@ cartera>
 
 ## Comandos disponibles
 
+### Totales y resumen
+
 | Comando | Qué hace |
 |---|---|
 | `total` | Total general de cartera (facturado + pendiente) |
 | `total facturado` | Solo el total de OC facturadas |
 | `total pendiente` | Solo el total de cotizaciones pendientes |
-| `resumen` | Vista general: conteos, montos y desglose por estado |
+| `total mensual` | Total del reporte mensual: cobrado vs sin fecha de pago |
+| `resumen` | Vista general: conteos, montos, estados y resumen del reporte mensual |
+
+### Cartera (Excel)
+
+| Comando | Qué hace |
+|---|---|
 | `facturas` | Lista todas las OC facturadas con montos y fechas |
 | `pendientes` | Lista todas las cotizaciones pendientes |
 | `pendientes [suc]` | Cotizaciones pendientes de una sucursal específica |
+| `estado [texto]` | Filtra facturas por estado (ej: `estado aceptada`) |
+| `estado prioridad` | Muestra solo las facturas marcadas como prioridad |
+
+### Reporte mensual (CSV)
+
+| Comando | Qué hace |
+|---|---|
+| `cobradas` | Facturas del reporte mensual que ya tienen fecha de pago |
+| `sin cobrar` | Facturas del reporte mensual sin fecha de pago registrada |
+| `buscar cliente [nombre]` | Todas las facturas de un cliente (ej: `buscar cliente waldos`) |
+
+### Cruce entre archivos
+
+| Comando | Qué hace |
+|---|---|
+| `cruce` | Facturas que están en cartera como pendientes pero ya tienen pago en el reporte mensual |
+
+### Búsquedas
+
+| Comando | Qué hace |
+|---|---|
 | `buscar oc [texto]` | Busca por número de OC (ej: `buscar oc O01-507749`) |
 | `buscar factura [num]` | Busca una factura por su número |
 | `buscar cot [num]` | Busca una cotización pendiente por su número |
 | `buscar suc [num]` | Todas las cotizaciones de una sucursal |
-| `estado [texto]` | Filtra facturas por estado (ej: `estado aceptada`) |
-| `estado prioridad` | Muestra solo las facturas marcadas como prioridad |
+
+### Validaciones y otros
+
+| Comando | Qué hace |
+|---|---|
 | `errores` | Detecta inconsistencias: montos vacíos, fechas faltantes, duplicados |
+| `actualizar` | Descarga los archivos desde Google Drive |
 | `ayuda` | Muestra el menú de comandos |
 | `salir` | Cierra el sistema |
 
@@ -135,11 +168,13 @@ La interfaz. Coordina la carga, limpieza y consulta, y maneja el loop de `input(
 
 ---
 
-## Datos del Excel
+## Archivos de datos
 
-El sistema lee dos hojas del archivo `CARTERA AL 11032026.xlsx`:
+El sistema carga dos fuentes al iniciar.
 
-### Hoja: `OC FACTURADO`
+### Excel de cartera: `CARTERA AL 11032026.xlsx`
+
+#### Hoja: `OC FACTURADO`
 
 | Campo | Descripción |
 |---|---|
@@ -150,7 +185,7 @@ El sistema lee dos hojas del archivo `CARTERA AL 11032026.xlsx`:
 | `fecha` | Fecha de cálculo de la factura |
 | `estado` | Estado: `ACEPTADA`, `PREV ACEPTADO`, etc. |
 
-### Hoja: `PTE OC 25-26`
+#### Hoja: `PTE OC 25-26`
 
 | Campo | Descripción |
 |---|---|
@@ -159,21 +194,142 @@ El sistema lee dos hojas del archivo `CARTERA AL 11032026.xlsx`:
 | `importe` | Monto cotizado |
 | `concepto` | Descripción del servicio (MTTO IGUALA, ILUMINACION, etc.) |
 
+### Reporte mensual: `reporteMensual_FACTURAS.csv`
+
+Historial de todas las facturas emitidas en el período, con su fecha de pago. El campo `folio` es el mismo número que `factura` en el Excel de cartera, lo que permite cruzar ambas fuentes.
+
+| Campo | Descripción |
+|---|---|
+| `folio` | Número de factura (enlaza con `factura` del Excel de cartera) |
+| `cliente` | Nombre del cliente (WALDOS, TOYODA, OHD, etc.) |
+| `fecha` | Fecha de emisión de la factura |
+| `concepto` | Descripción del trabajo realizado |
+| `total` | Monto facturado |
+| `fecha_pago` | Fecha en que se registró el pago (vacío = sin cobrar) |
+
 ---
 
 ## Notas técnicas
 
 - El Excel tiene filas vacías y encabezados desplazados. El loader detecta el encabezado real buscando palabras clave (`FACTURA`, `COT`) en columnas específicas, sin depender de posiciones fijas.
 - Las últimas filas de cada hoja son totales/resumen del Excel. El cleaner las elimina detectando que no tienen número de factura/cotización válido.
+- El CSV del reporte mensual puede tener encoding `utf-8-sig` o `latin-1` dependiendo del sistema que lo generó. El loader prueba ambos automáticamente.
+- Las filas canceladas en el CSV (`C A N C E L A D O`) se excluyen automáticamente durante la limpieza.
+- El reporte mensual es opcional: si no existe el CSV en `data/raw/`, el sistema carga solo el Excel de cartera sin errores.
 - Ningún archivo de datos sube al repositorio de GitHub (controlado por `.gitignore`).
+
+---
+
+## Reglas de manejo de archivos
+
+Estas reglas aplican ahora y seguirán aplicando cuando se integre Google Drive.
+
+| Regla | Descripción |
+|---|---|
+| **No modificar el original** | El archivo Excel que llega del cliente no se toca. Nunca. |
+| **Trabajar sobre copias** | Cualquier limpieza, validación o edición futura se hace sobre una copia en `02_Excels_Trabajo/`. |
+| **Backup obligatorio** | Antes de cualquier escritura futura al Excel, el sistema debe crear un backup automático en `03_Backups/`. Esta función no existe aún, se implementará cuando se habilite la escritura. |
+| **Los archivos reales no suben a GitHub** | El `.gitignore` excluye `data/raw/`, `data/backups/` y todos los `.xlsx`. El repositorio solo contiene código. |
+| **Dónde viven los archivos reales** | Localmente en `data/raw/` durante el desarrollo. Cuando se integre Drive, vendrán de `01_Excels_Originales/` en la unidad compartida. |
+
+---
+
+## Estructura recomendada en Google Drive
+
+Cuando se implemente la integración con Google Drive, los archivos del proyecto se organizarán en una carpeta compartida con esta estructura:
+
+```
+Cesym Chatbot/                        ← Carpeta raíz en Drive (acceso compartido)
+│
+├── 01_Excels_Originales/             ← Archivos tal como llegan. NUNCA se editan aquí.
+│   └── CARTERA AL 11032026.xlsx
+│   └── (futuros archivos de trabajos realizados)
+│
+├── 02_Excels_Trabajo/                ← Copias de trabajo. El sistema opera sobre estos.
+│   └── (copias generadas automáticamente al iniciar un proceso)
+│
+├── 03_Backups/                       ← Respaldos con fecha/hora antes de cualquier escritura.
+│   └── (generados automáticamente, nunca manuales)
+│
+├── 04_Reportes_Generados/            ← Reportes de calidad y consultas exportadas.
+│   └── data_quality_report.md
+│   └── (futuros reportes en Excel o PDF)
+│
+├── 05_Muestras_Sin_Datos_Reales/     ← Archivos con estructura real pero datos ficticios.
+│   └── (para pruebas, demos y desarrollo sin exponer información real)
+│
+└── 06_Documentacion/                 ← Guías de uso, flujos, decisiones del proyecto.
+    └── README.md
+    └── TESTING.md
+```
+
+> **Nota:** Esta estructura aún no está conectada al código. Es la organización que se usará cuando se implemente `src/drive_connector.py` en una versión futura.
+
+---
+
+## Flujo recomendado de archivos
+
+Este es el proceso que debe seguirse cada vez que se recibe un Excel actualizado, ahora y cuando se integre Drive.
+
+```
+1. RECIBIR EL EXCEL ORIGINAL
+   └── El archivo llega por correo, WhatsApp o Drive desde el cliente.
+       No se edita. No se renombra. No se abre en Excel para "corregir".
+
+2. GUARDAR EN DRIVE (cuando esté integrado)
+   └── Subir a: Cesym Chatbot/01_Excels_Originales/
+       Nombre sugerido: CARTERA AL DDMMYYYY.xlsx
+
+3. COPIAR A CARPETA DE TRABAJO
+   └── El sistema (o el usuario manualmente por ahora) copia el archivo a:
+         - Local:  data/raw/
+         - Drive:  02_Excels_Trabajo/
+       La copia es la que se lee. El original no se toca.
+
+4. EJECUTAR LIMPIEZA Y VALIDACIÓN
+   └── python main.py               ← Carga y limpia los datos
+       python scripts/run_manual_tests.py  ← Genera reporte de calidad
+
+5. REVISAR EL REPORTE DE CALIDAD
+   └── Abrir data_quality_report.md y verificar:
+         - Registros con fechas vacías
+         - OC o cotizaciones duplicadas
+         - Montos inválidos
+         - Registros incompletos
+       Cualquier inconsistencia debe consultarse con el origen del Excel
+       antes de continuar.
+
+6. VALIDAR RESULTADOS CON EL RESPONSABLE DEL EXCEL
+   └── Si hay errores o datos raros, confirmar con la persona que generó
+       el archivo si son válidos o si son errores de captura.
+
+7. SOLO DESPUÉS: PERMITIR AUTOMATIZACIONES
+   └── Una vez validado el Excel, se pueden activar:
+         - Respuestas automáticas por WhatsApp
+         - Exportación de reportes a Drive
+         - Cruce con el segundo Excel (trabajos realizados)
+         - Cualquier proceso que escriba o modifique datos
+```
+
+> **Regla de oro:** Nunca automatizar sobre un Excel que no fue revisado manualmente al menos una vez.
 
 ---
 
 ## Próximas versiones (roadmap)
 
-- [ ] Soporte para un segundo Excel (trabajos realizados por tienda/sucursal)
-- [ ] Cruce de información entre los dos archivos
-- [ ] Integración con Claude API para consultas en lenguaje natural
-- [ ] Conexión con WhatsApp para responder consultas desde el celular
+**v1.x — Mejoras locales**
+- [x] Soporte para el reporte mensual de facturas (CSV)
+- [x] Cruce de información entre cartera y reporte mensual
+- [ ] Detección de facturas y OC duplicadas en el comando `errores`
 - [ ] Sistema de logs para registrar consultas
-- [ ] Backups automáticos antes de cualquier modificación futura
+
+**v2 — Integración con Google Drive**
+- [ ] `src/drive_connector.py` — descarga el Excel desde Drive sin modificar el original
+- [ ] Copia automática a carpeta de trabajo antes de procesar
+- [ ] Backup automático con fecha/hora antes de cualquier escritura futura
+- [ ] Exportación de reportes a `04_Reportes_Generados/` en Drive
+
+**v3 — Automatización e IA**
+- [ ] Integración con Claude API para consultas en lenguaje natural
+- [ ] Conexión con WhatsApp (n8n o Twilio) para responder consultas desde el celular
+- [ ] Notificaciones automáticas cuando se detecten inconsistencias

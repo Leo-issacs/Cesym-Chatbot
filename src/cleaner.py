@@ -121,3 +121,79 @@ def clean_pendiente(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
         )
 
     return df, advertencias
+
+
+def clean_facturas_mensual(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
+    """
+    Limpia el reporte mensual de facturas (CSV).
+
+    Columnas originales: Folio, Cliente, Fecha, Concepto, Total, FECHA DE PAGO
+    - Descarta filas canceladas
+    - Limpia montos: " $1,234.00 " → 1234.0
+    - Parsea fechas DD/MM/YYYY
+    - Normaliza nombres de cliente (strip, uppercase)
+
+    Retorna:
+        (DataFrame limpio, lista de advertencias)
+    """
+    df = df.copy()
+    df.columns = [c.strip() for c in df.columns]
+    df.columns = ["folio", "cliente", "fecha", "concepto", "total", "fecha_pago"]
+
+    # Eliminar filas canceladas (concepto contiene CANCELADO sin espacios)
+    mask_canceladas = (
+        df["concepto"]
+        .astype(str)
+        .str.upper()
+        .str.replace(r"\s+", "", regex=True)
+        .str.contains("CANCELADO", na=False)
+    )
+    n_canceladas = int(mask_canceladas.sum())
+    df = df[~mask_canceladas].copy()
+
+    # Eliminar filas donde folio no es numérico (filas de resumen/total)
+    df = df[pd.to_numeric(df["folio"], errors="coerce").notna()].copy()
+
+    # --- Conversión de tipos ---
+    df["folio"] = pd.to_numeric(df["folio"], errors="coerce").astype("Int64")
+    df["cliente"] = df["cliente"].astype(str).str.strip().str.upper().replace("NAN", "")
+    df["concepto"] = df["concepto"].astype(str).str.strip()
+
+    # Limpiar monto: " $1,234.00 " → 1234.0
+    df["total"] = (
+        df["total"]
+        .astype(str)
+        .str.strip()
+        .str.replace(r"[\$,\s]", "", regex=True)
+        .pipe(lambda s: pd.to_numeric(s, errors="coerce"))
+    )
+
+    df["fecha"] = pd.to_datetime(
+        df["fecha"].astype(str).str.strip(), format="%d/%m/%Y", errors="coerce"
+    )
+    df["fecha_pago"] = pd.to_datetime(
+        df["fecha_pago"].astype(str).str.strip(), format="%d/%m/%Y", errors="coerce"
+    )
+
+    df = df.reset_index(drop=True)
+
+    # --- Detección de inconsistencias ---
+    advertencias = []
+
+    if n_canceladas > 0:
+        advertencias.append(f"{n_canceladas} factura(s) cancelada(s) excluidas del reporte mensual")
+
+    sin_pago = df[df["fecha_pago"].isna()]
+    if not sin_pago.empty:
+        advertencias.append(
+            f"{len(sin_pago)} factura(s) del reporte mensual sin fecha de pago registrada"
+        )
+
+    montos_invalidos = df[df["total"].isna() | (df["total"] <= 0)]
+    if not montos_invalidos.empty:
+        advertencias.append(
+            f"{len(montos_invalidos)} factura(s) del reporte mensual con monto inválido: "
+            f"{montos_invalidos['folio'].tolist()}"
+        )
+
+    return df, advertencias

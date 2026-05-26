@@ -5,15 +5,45 @@ Responsabilidad única: abrir el archivo Excel y devolver los datos RAW
 tal como están, sin limpiar ni transformar nada.
 
 Nunca modifica el archivo original. Solo lectura.
+
+Resolución del archivo:
+  1. Si se pasa una ruta explícita, la usa.
+  2. Si existe CARTERA_PATH en el entorno, la usa.
+  3. Si no, busca automáticamente el archivo más reciente que empiece
+     con "CARTERA" en data/raw/ (útil cuando el nombre cambia cada mes).
 """
 
+import os
 import pandas as pd
 from pathlib import Path
 
-EXCEL_PATH = Path(__file__).parent.parent / "data" / "raw" / "CARTERA AL 11032026.xlsx"
+DATA_RAW_DIR = Path(__file__).parent.parent / "data" / "raw"
 
 
-def _extract_sheet(sheet_name: str, keyword: str, keyword_col: int = 0) -> pd.DataFrame:
+def _resolver_ruta_cartera(ruta_explicita: Path | None = None) -> Path:
+    """Determina qué archivo Excel de cartera usar."""
+    if ruta_explicita:
+        return ruta_explicita
+
+    env_path = os.getenv("CARTERA_PATH")
+    if env_path:
+        return Path(env_path)
+
+    candidatos = sorted(
+        DATA_RAW_DIR.glob("CARTERA*.xlsx"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    if not candidatos:
+        raise FileNotFoundError(
+            "No se encontró ningún archivo Excel de cartera en data/raw/.\n"
+            "Descargá el archivo desde Drive con el comando 'actualizar', "
+            "o copialo manualmente a data/raw/."
+        )
+    return candidatos[0]
+
+
+def _extract_sheet(sheet_name: str, keyword: str, keyword_col: int = 0, excel_path: Path | None = None) -> pd.DataFrame:
     """
     Lee una hoja del Excel sin asumir en qué fila está el encabezado.
 
@@ -26,8 +56,10 @@ def _extract_sheet(sheet_name: str, keyword: str, keyword_col: int = 0) -> pd.Da
         sheet_name  : nombre de la hoja en el Excel
         keyword     : texto que identifica la fila de encabezado
         keyword_col : índice de la columna donde buscar ese texto
+        excel_path  : ruta al archivo Excel (opcional, usa _resolver_ruta_cartera si no se pasa)
     """
-    raw = pd.read_excel(EXCEL_PATH, sheet_name=sheet_name, header=None)
+    path = excel_path or _resolver_ruta_cartera()
+    raw = pd.read_excel(path, sheet_name=sheet_name, header=None)
 
     col_vals = raw.iloc[:, keyword_col].astype(str).str.strip().str.upper()
     matches = raw.index[col_vals == keyword.upper()]
@@ -44,7 +76,7 @@ def _extract_sheet(sheet_name: str, keyword: str, keyword_col: int = 0) -> pd.Da
     return df.reset_index(drop=True)
 
 
-def load_facturado() -> pd.DataFrame:
+def load_facturado(excel_path: Path | None = None) -> pd.DataFrame:
     """
     Carga la hoja 'OC FACTURADO'.
 
@@ -52,10 +84,11 @@ def load_facturado() -> pd.DataFrame:
     El encabezado real está precedido por una fila vacía en el Excel,
     por eso usamos detección dinámica buscando 'FACTURA' en la primera columna.
     """
-    return _extract_sheet("OC FACTURADO", "FACTURA", keyword_col=0)
+    path = excel_path or _resolver_ruta_cartera()
+    return _extract_sheet("OC FACTURADO", "FACTURA", keyword_col=0, excel_path=path)
 
 
-def load_pendiente() -> pd.DataFrame:
+def load_pendiente(excel_path: Path | None = None) -> pd.DataFrame:
     """
     Carga la hoja 'PTE OC 25-26'.
 
@@ -63,4 +96,41 @@ def load_pendiente() -> pd.DataFrame:
     El encabezado real está en la tercera fila del Excel, precedido por un título.
     Buscamos 'COT' en la segunda columna para detectarlo.
     """
-    return _extract_sheet("PTE OC 25-26", "COT", keyword_col=1)
+    path = excel_path or _resolver_ruta_cartera()
+    return _extract_sheet("PTE OC 25-26", "COT", keyword_col=1, excel_path=path)
+
+
+def _resolver_ruta_facturas_mensual(ruta_explicita: Path | None = None) -> Path:
+    """Determina qué archivo CSV de reporte mensual usar."""
+    if ruta_explicita:
+        return ruta_explicita
+
+    env_path = os.getenv("FACTURAS_PATH")
+    if env_path:
+        return Path(env_path)
+
+    candidatos = sorted(
+        DATA_RAW_DIR.glob("reporteMensual*.csv"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    if not candidatos:
+        raise FileNotFoundError(
+            "No se encontró ningún archivo de reporte mensual en data/raw/.\n"
+            "Coloca el archivo CSV en data/raw/ o descárgalo desde Drive con 'actualizar'."
+        )
+    return candidatos[0]
+
+
+def load_facturas_mensual(ruta_explicita: Path | None = None) -> pd.DataFrame:
+    """
+    Carga el reporte mensual de facturas desde un archivo CSV.
+
+    Columnas esperadas: Folio, Cliente, Fecha, Concepto, Total, FECHA DE PAGO
+    Devuelve los datos RAW sin limpiar.
+    """
+    path = _resolver_ruta_facturas_mensual(ruta_explicita)
+    try:
+        return pd.read_csv(path, dtype=str, encoding="utf-8-sig")
+    except UnicodeDecodeError:
+        return pd.read_csv(path, dtype=str, encoding="latin-1")
