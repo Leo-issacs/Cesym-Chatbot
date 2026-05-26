@@ -102,6 +102,27 @@ def listar_excels(folder_id: str) -> list[dict]:
     return resultado.get("files", [])
 
 
+def listar_csvs(folder_id: str) -> list[dict]:
+    """
+    Lista todos los archivos CSV dentro de la carpeta indicada.
+
+    Retorna una lista de dicts con 'id', 'name' y 'modifiedTime'.
+    """
+    servicio = autenticar()
+    query = (
+        f"'{folder_id}' in parents"
+        " and (mimeType='text/csv' or mimeType='text/plain')"
+        " and trashed=false"
+    )
+    resultado = (
+        servicio.files()
+        .list(q=query, fields="files(id, name, modifiedTime)", orderBy="modifiedTime desc")
+        .execute()
+    )
+    # Filtrar solo los que terminan en .csv por si hay otros .txt
+    return [a for a in resultado.get("files", []) if a["name"].endswith(".csv")]
+
+
 def descargar_excel(file_id: str, nombre_destino: str) -> Path:
     """
     Descarga un archivo de Drive a data/raw/<nombre_destino>.
@@ -126,15 +147,17 @@ def descargar_excel(file_id: str, nombre_destino: str) -> Path:
 
 def sincronizar_desde_drive(folder_id: str) -> list[str]:
     """
-    Descarga todos los Excels de la carpeta de Drive a data/raw/.
+    Descarga todos los Excels (.xlsx) y reportes (.csv) de la carpeta de Drive a data/raw/.
 
     Retorna una lista con los nombres de los archivos descargados.
     """
-    archivos = listar_excels(folder_id)
+    excels = listar_excels(folder_id)
+    csvs = listar_csvs(folder_id)
+    archivos = excels + csvs
 
     if not archivos:
         raise ValueError(
-            f"No se encontraron archivos Excel en la carpeta de Drive (ID: {folder_id}).\n"
+            f"No se encontraron archivos en la carpeta de Drive (ID: {folder_id}).\n"
             "Verificá que el ID de carpeta sea correcto y que hayas compartido la carpeta con tu cuenta."
         )
 
