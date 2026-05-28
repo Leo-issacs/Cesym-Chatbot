@@ -14,6 +14,7 @@ Despliegue cloud (Railway / Render):
 import os
 from contextlib import asynccontextmanager
 
+import pandas as pd
 from fastapi import FastAPI, Form, Response
 
 from src.cli import _cargar_dotenv, _cargar_datos, _sincronizar_drive
@@ -22,9 +23,18 @@ from src.query_engine import run_query
 _LIMITE_WA = 4000  # Twilio trunca mensajes > 4096 chars
 
 # ─── Estado global ─────────────────────────────────────────────────────────────
-_datos: dict = {}
+_datos: dict = {
+    "facturado": pd.DataFrame(),
+    "pendiente": pd.DataFrame(),
+    "facturas_mensual": pd.DataFrame(),
+    "trabajos": pd.DataFrame(),
+}
 _cliente_ia = None
 _traducir_fn = None
+
+
+def _hay_datos() -> bool:
+    return not _datos["facturado"].empty
 
 
 def _recargar_datos() -> list[str]:
@@ -67,7 +77,12 @@ async def lifespan(app: FastAPI):
         except Exception:
             pass  # Si falla, intenta cargar lo que haya en data/raw/
 
-    _recargar_datos()
+    # Cargar datos si hay archivos disponibles (no crashear si no hay)
+    try:
+        _recargar_datos()
+    except FileNotFoundError:
+        pass  # Sin datos — el usuario debe enviar 'actualizar' desde WhatsApp
+
     _init_ia()
     yield
 
@@ -124,10 +139,15 @@ async def webhook(Body: str = Form(...)):
     entrada = Body.strip()
 
     if not entrada:
-        return _twiml("Hola. Escribí 'ayuda' para ver los comandos disponibles.")
+        return _twiml("Hola. Escribe 'ayuda' para ver los comandos disponibles.")
 
     if entrada.lower() in ("salir", "exit", "quit"):
-        return _twiml("Escribí 'ayuda' para ver los comandos disponibles.")
+        return _twiml("Escribe 'ayuda' para ver los comandos disponibles.")
+
+    if not _hay_datos() and entrada.lower() != "actualizar":
+        return _twiml(
+            "No hay datos cargados. Escribe 'actualizar' para descargar los archivos desde Google Drive."
+        )
 
     if entrada.lower() == "actualizar":
         try:
