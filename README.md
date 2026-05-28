@@ -1,126 +1,174 @@
 # Cesym Chatbot
 
-Agente local en Python para consultar archivos Excel de cartera: facturas, órdenes de compra y cotizaciones pendientes.
-
-La primera versión funciona completamente desde consola. No conecta WhatsApp ni modifica ningún archivo Excel original.
+Chatbot de WhatsApp para consultar la cartera de facturas, cotizaciones pendientes y registrar trabajos realizados. Corre en la nube (Railway) y responde desde cualquier número conectado al sandbox de Twilio.
 
 ---
 
-## ¿Qué hace este proyecto?
+## ¿Qué hace?
 
-La empresa maneja su cartera en archivos Excel manualmente. Este sistema lee esos archivos, los limpia y permite hacer consultas en lenguaje sencillo desde la terminal, sin abrir Excel.
+- Consulta el Excel de cartera: facturas, OC, cotizaciones pendientes, reporte mensual
+- Registra trabajos nuevos desde WhatsApp (flujo conversacional paso a paso)
+- Descarga los archivos desde Google Drive al iniciar
+- Sube automáticamente el Excel de trabajos a Drive al guardar un nuevo registro
+- Responde en lenguaje natural gracias a Claude Haiku cuando el comando no se reconoce exactamente
 
-**Ejemplo de uso:**
+---
+
+## Arquitectura
 
 ```
-cartera> total
-cartera> buscar oc O01-507749
-cartera> estado prioridad
-cartera> errores
+WhatsApp (usuario)
+      │
+   Twilio (recibe y envía mensajes)
+      │
+   Railway (servidor FastAPI en la nube)
+      │
+   Google Drive (archivos Excel fuente)
 ```
 
----
-
-## Requisitos
-
-- Python 3.11.9
-- Las dependencias están en `requirements.txt`
+El servidor corre en Railway. Al arrancar, descarga los Excels desde Drive a `data/raw/`. Todas las consultas operan sobre esos datos en memoria.
 
 ---
 
-## Instalación
+## Comandos disponibles (WhatsApp)
+
+### Totales y resumen
+
+| Comando | Qué hace |
+|---|---|
+| `total` | Total general (facturado + pendiente) |
+| `total facturado` | Solo OC facturadas |
+| `total pendiente` | Solo cotizaciones pendientes |
+| `total mensual` | Cobrado vs sin fecha de pago |
+| `resumen` | Vista general: conteos, montos, estados |
+
+### Cartera
+
+| Comando | Qué hace |
+|---|---|
+| `facturas` | Lista OC facturadas con montos y fechas |
+| `pendientes` | Lista cotizaciones pendientes |
+| `pendientes [suc]` | Cotizaciones de una sucursal específica |
+| `estado [texto]` | Filtra facturas por estado (ej: `estado aceptada`) |
+| `estado prioridad` | Solo las facturas marcadas como prioridad |
+| `cobradas` | Facturas del reporte mensual con fecha de pago |
+| `sin cobrar` | Facturas del reporte mensual sin pago |
+| `cruce` | Facturas pendientes en cartera pero ya pagadas en el mensual |
+
+### Trabajos
+
+| Comando | Qué hace |
+|---|---|
+| `trabajos` | Lista todos los trabajos registrados |
+| `trabajos [mes]` | Trabajos de un mes específico (ej: `trabajos mayo`) |
+| `agregar trabajo` | Inicia el flujo para registrar un trabajo nuevo |
+
+### Búsquedas
+
+| Comando | Qué hace |
+|---|---|
+| `buscar oc [texto]` | Busca por número de OC |
+| `buscar factura [num]` | Busca una factura por número |
+| `buscar cot [num]` | Busca una cotización por número |
+| `buscar suc [num]` | Cotizaciones de una sucursal |
+| `buscar cliente [nombre]` | Facturas de un cliente |
+| `buscar tecnico [nombre]` | Trabajos de un técnico |
+
+### Otros
+
+| Comando | Qué hace |
+|---|---|
+| `errores` | Detecta inconsistencias en los datos |
+| `actualizar` | Descarga los archivos desde Drive y recarga los datos |
+| `ayuda` | Muestra el menú completo |
+
+---
+
+## Flujo de registro de trabajo
+
+Al escribir `agregar trabajo`, el bot hace preguntas una por una:
+
+1. Mes del trabajo
+2. Técnico que lo realizó
+3. Nombre del cliente
+4. Domicilio
+5. Teléfono (o "sin")
+6. Tipo de trabajo
+7. Monto cobrado (o "sin cobrar")
+8. Quién recibe / firma
+
+Al final muestra un resumen y pide confirmación antes de guardar. Escribe `cancelar` en cualquier momento para salir sin guardar.
+
+El registro se guarda en el Excel `CONTROL DE INST. MINISPLIT 2026.xlsx` y se sube automáticamente a Drive.
+
+---
+
+## Variables de entorno
+
+El servidor necesita estas variables configuradas en Railway:
+
+| Variable | Descripción |
+|---|---|
+| `DRIVE_FOLDER_ID` | ID de la carpeta `02_Excels_Trabajo` en Google Drive |
+| `GOOGLE_CREDENTIALS_JSON` | Contenido de `credentials.json` en base64 |
+| `GOOGLE_TOKEN_JSON` | Contenido de `token.json` en base64 |
+| `ANTHROPIC_API_KEY` | API key de Anthropic (para el fallback de lenguaje natural) |
+
+Para generar los valores base64 de las credenciales de Drive:
 
 ```powershell
-# 1. Activar el entorno virtual
 .\venv_Cesym_Chatbot\Scripts\Activate.ps1
-
-# 2. Instalar dependencias
-pip install -r requirements.txt
-
-# 3. Colocar el Excel en la carpeta correcta
-#    El archivo debe estar en:  data/raw/CARTERA AL 11032026.xlsx
+python scripts/export_credenciales.py
 ```
+
+Copia los valores que imprime y pégalos en las variables de Railway.
 
 ---
 
-## Cómo ejecutar
+## Despliegue en Railway
+
+El proyecto ya está desplegado en Railway. Para actualizarlo basta con hacer push a `main`:
+
+```powershell
+git push
+```
+
+Railway detecta el push, reconstruye la imagen y reinicia el servidor automáticamente.
+
+Si el servidor aparece en rojo (crash), revisar los logs en el dashboard de Railway. El error más común es que las credenciales de Drive estén mal copiadas.
+
+### URL del servidor
+
+```
+https://web-production-2bb2c.up.railway.app
+```
+
+- `GET /` — health check, muestra cuántos registros hay cargados
+- `POST /webhook` — endpoint que usa Twilio
+
+---
+
+## Conectar un número de WhatsApp al sandbox
+
+1. Abrir WhatsApp desde el número que se quiere conectar
+2. Enviar el mensaje de invitación al número del sandbox de Twilio  
+   (se encuentra en Twilio → Messaging → Try it out → Send a WhatsApp message)
+3. Una vez conectado, el número puede usar todos los comandos normalmente
+
+El sandbox soporta varios números conectados al mismo tiempo. La conexión dura ~72 horas de inactividad; si expira, repetir el paso 2.
+
+---
+
+## Uso local (consola)
+
+Para probar sin WhatsApp:
 
 ```powershell
 .\venv_Cesym_Chatbot\Scripts\Activate.ps1
 python main.py
 ```
 
-El sistema cargará el Excel, limpiará los datos y mostrará un prompt interactivo:
-
-```
-╔══════════════════════════════════════════════╗
-         CESYM CHATBOT — Consulta de Cartera
-╚══════════════════════════════════════════════╝
-
-Cargando datos del Excel...
-  ✓ OC Facturado : 116 registros cargados
-  ✓ OC Pendiente :  61 registros cargados
-
-Escribe 'ayuda' para ver los comandos disponibles.
-
-cartera>
-```
-
----
-
-## Comandos disponibles
-
-### Totales y resumen
-
-| Comando | Qué hace |
-|---|---|
-| `total` | Total general de cartera (facturado + pendiente) |
-| `total facturado` | Solo el total de OC facturadas |
-| `total pendiente` | Solo el total de cotizaciones pendientes |
-| `total mensual` | Total del reporte mensual: cobrado vs sin fecha de pago |
-| `resumen` | Vista general: conteos, montos, estados y resumen del reporte mensual |
-
-### Cartera (Excel)
-
-| Comando | Qué hace |
-|---|---|
-| `facturas` | Lista todas las OC facturadas con montos y fechas |
-| `pendientes` | Lista todas las cotizaciones pendientes |
-| `pendientes [suc]` | Cotizaciones pendientes de una sucursal específica |
-| `estado [texto]` | Filtra facturas por estado (ej: `estado aceptada`) |
-| `estado prioridad` | Muestra solo las facturas marcadas como prioridad |
-
-### Reporte mensual (CSV)
-
-| Comando | Qué hace |
-|---|---|
-| `cobradas` | Facturas del reporte mensual que ya tienen fecha de pago |
-| `sin cobrar` | Facturas del reporte mensual sin fecha de pago registrada |
-| `buscar cliente [nombre]` | Todas las facturas de un cliente (ej: `buscar cliente waldos`) |
-
-### Cruce entre archivos
-
-| Comando | Qué hace |
-|---|---|
-| `cruce` | Facturas que están en cartera como pendientes pero ya tienen pago en el reporte mensual |
-
-### Búsquedas
-
-| Comando | Qué hace |
-|---|---|
-| `buscar oc [texto]` | Busca por número de OC (ej: `buscar oc O01-507749`) |
-| `buscar factura [num]` | Busca una factura por su número |
-| `buscar cot [num]` | Busca una cotización pendiente por su número |
-| `buscar suc [num]` | Todas las cotizaciones de una sucursal |
-
-### Validaciones y otros
-
-| Comando | Qué hace |
-|---|---|
-| `errores` | Detecta inconsistencias: montos vacíos, fechas faltantes, duplicados |
-| `actualizar` | Descarga los archivos desde Google Drive |
-| `ayuda` | Muestra el menú de comandos |
-| `salir` | Cierra el sistema |
+Requiere tener los archivos Excel en `data/raw/` y el archivo `.env` con las variables configuradas.
 
 ---
 
@@ -129,208 +177,71 @@ cartera>
 ```
 Cesym Chatbot/
 │
-├── main.py                  ← Punto de entrada. Ejecuta el chatbot.
+├── main.py                  ← Entrada para uso desde consola
+├── Procfile                 ← Comando de arranque para Railway
 │
 ├── src/
-│   ├── loader.py            ← Lee el Excel (solo lectura, no modifica nada)
-│   ├── cleaner.py           ← Limpia y normaliza los datos del Excel
-│   ├── query_engine.py      ← Interpreta los comandos y consulta los datos
-│   └── cli.py               ← Interfaz de consola (el loop interactivo)
+│   ├── webhook.py           ← Servidor FastAPI (endpoint de Twilio)
+│   ├── sesiones.py          ← Estado de conversaciones activas por número
+│   ├── escritor.py          ← Escribe filas en el Excel de trabajos
+│   ├── query_engine.py      ← Interpreta comandos y consulta los datos
+│   ├── ai_query.py          ← Fallback de lenguaje natural con Claude Haiku
+│   ├── cli.py               ← Interfaz de consola
+│   ├── loader.py            ← Lee los archivos Excel y CSV
+│   ├── cleaner.py           ← Limpia y normaliza los datos
+│   └── drive.py             ← Descarga y sube archivos a Google Drive
+│
+├── scripts/
+│   └── export_credenciales.py  ← Genera los valores base64 para Railway
 │
 ├── data/
-│   └── raw/                 ← Aquí va el Excel original (NO sube a GitHub)
+│   ├── raw/                 ← Archivos descargados de Drive (no sube a GitHub)
+│   └── backups/             ← Backups automáticos antes de escribir (no sube a GitHub)
 │
-├── requirements.txt         ← Dependencias del proyecto
-├── .env.example             ← Template para futuras variables de entorno
-└── .gitignore               ← Archivos excluidos del repositorio
+├── .env                     ← Variables de entorno locales (no sube a GitHub)
+├── .env.example             ← Template de variables de entorno
+└── requirements.txt         ← Dependencias del proyecto
 ```
-
-### ¿Qué hace cada archivo?
-
-**`main.py`**
-El punto de entrada. Solo llama a `cli.run()`. Si quieres ejecutar el proyecto, aquí empieza todo.
-
-**`src/loader.py`**
-Abre el Excel con `pandas` y devuelve los datos tal como están, sin limpiar nada. Detecta automáticamente dónde está el encabezado real de cada hoja, porque el Excel tiene filas vacías y títulos antes de los datos.
-
-**`src/cleaner.py`**
-Recibe los datos crudos del loader y los transforma:
-- Renombra las columnas a nombres claros en español
-- Elimina las filas de totales/resumen que el Excel incluye al final
-- Convierte los tipos de datos (fechas como `datetime`, montos como `float`, etc.)
-- Detecta problemas y los reporta como advertencias sin borrar nada
-
-**`src/query_engine.py`**
-El cerebro del sistema. Recibe el texto que escribe el usuario, lo divide en palabras, identifica el comando (verbo) y ejecuta la función correspondiente. Devuelve siempre texto formateado listo para imprimir.
-
-**`src/cli.py`**
-La interfaz. Coordina la carga, limpieza y consulta, y maneja el loop de `input()` donde el usuario escribe comandos. También muestra los mensajes de bienvenida y las advertencias de carga.
 
 ---
 
-## Archivos de datos
+## Archivos de datos en Drive
 
-El sistema carga dos fuentes al iniciar.
+Los archivos viven en la carpeta `02_Excels_Trabajo` de Google Drive.
 
-### Excel de cartera: `CARTERA AL 11032026.xlsx`
-
-#### Hoja: `OC FACTURADO`
-
-| Campo | Descripción |
+| Archivo | Contenido |
 |---|---|
-| `factura` | Número de la factura emitida |
-| `oc` | Número de la Orden de Compra asociada |
-| `monto_actual` | Monto pendiente de cobro (CURTRXAM) |
-| `prioridad` | Flag de prioridad (`PRIORIDAD` o vacío) |
-| `fecha` | Fecha de cálculo de la factura |
-| `estado` | Estado: `ACEPTADA`, `PREV ACEPTADO`, etc. |
+| `CARTERA AL *.xlsx` | Facturas, OC y cotizaciones pendientes (hoja `OC FACTURADO` y `PTE OC 25-26`) |
+| `reporteMensual_FACTURAS.csv` | Historial de facturas con fechas de pago |
+| `CONTROL DE INST. MINISPLIT 2026.xlsx` | Registro de trabajos realizados a clientes |
 
-#### Hoja: `PTE OC 25-26`
-
-| Campo | Descripción |
-|---|---|
-| `cot` | Número de cotización enviada |
-| `suc` | Número de sucursal |
-| `importe` | Monto cotizado |
-| `concepto` | Descripción del servicio (MTTO IGUALA, ILUMINACION, etc.) |
-
-### Reporte mensual: `reporteMensual_FACTURAS.csv`
-
-Historial de todas las facturas emitidas en el período, con su fecha de pago. El campo `folio` es el mismo número que `factura` en el Excel de cartera, lo que permite cruzar ambas fuentes.
-
-| Campo | Descripción |
-|---|---|
-| `folio` | Número de factura (enlaza con `factura` del Excel de cartera) |
-| `cliente` | Nombre del cliente (WALDOS, TOYODA, OHD, etc.) |
-| `fecha` | Fecha de emisión de la factura |
-| `concepto` | Descripción del trabajo realizado |
-| `total` | Monto facturado |
-| `fecha_pago` | Fecha en que se registró el pago (vacío = sin cobrar) |
+El sistema descarga estos archivos automáticamente al iniciar. Para forzar una actualización desde WhatsApp, enviar `actualizar`.
 
 ---
 
-## Notas técnicas
+## Reglas de archivos
 
-- El Excel tiene filas vacías y encabezados desplazados. El loader detecta el encabezado real buscando palabras clave (`FACTURA`, `COT`) en columnas específicas, sin depender de posiciones fijas.
-- Las últimas filas de cada hoja son totales/resumen del Excel. El cleaner las elimina detectando que no tienen número de factura/cotización válido.
-- El CSV del reporte mensual puede tener encoding `utf-8-sig` o `latin-1` dependiendo del sistema que lo generó. El loader prueba ambos automáticamente.
-- Las filas canceladas en el CSV (`C A N C E L A D O`) se excluyen automáticamente durante la limpieza.
-- El reporte mensual es opcional: si no existe el CSV en `data/raw/`, el sistema carga solo el Excel de cartera sin errores.
-- Ningún archivo de datos sube al repositorio de GitHub (controlado por `.gitignore`).
+- El Excel original nunca se modifica directamente
+- Antes de cualquier escritura se crea un backup automático en `data/backups/`
+- Los archivos de datos no suben a GitHub (excluidos por `.gitignore`)
+- Los datos reales viven en Drive, no en el repositorio
 
 ---
 
-## Reglas de manejo de archivos
+## Roadmap
 
-Estas reglas aplican ahora y seguirán aplicando cuando se integre Google Drive.
+**Completado**
+- [x] Lectura y limpieza de Excel de cartera
+- [x] Consultas desde consola
+- [x] Integración con Google Drive
+- [x] Servidor WhatsApp via Twilio + Railway
+- [x] Fallback de lenguaje natural con Claude Haiku
+- [x] Tercer Excel: registro de trabajos
+- [x] Flujo de registro de trabajo desde WhatsApp
+- [x] Escritura al Excel con backup automático
 
-| Regla | Descripción |
-|---|---|
-| **No modificar el original** | El archivo Excel que llega del cliente no se toca. Nunca. |
-| **Trabajar sobre copias** | Cualquier limpieza, validación o edición futura se hace sobre una copia en `02_Excels_Trabajo/`. |
-| **Backup obligatorio** | Antes de cualquier escritura futura al Excel, el sistema debe crear un backup automático en `03_Backups/`. Esta función no existe aún, se implementará cuando se habilite la escritura. |
-| **Los archivos reales no suben a GitHub** | El `.gitignore` excluye `data/raw/`, `data/backups/` y todos los `.xlsx`. El repositorio solo contiene código. |
-| **Dónde viven los archivos reales** | Localmente en `data/raw/` durante el desarrollo. Cuando se integre Drive, vendrán de `01_Excels_Originales/` en la unidad compartida. |
-
----
-
-## Estructura recomendada en Google Drive
-
-Cuando se implemente la integración con Google Drive, los archivos del proyecto se organizarán en una carpeta compartida con esta estructura:
-
-```
-Cesym Chatbot/                        ← Carpeta raíz en Drive (acceso compartido)
-│
-├── 01_Excels_Originales/             ← Archivos tal como llegan. NUNCA se editan aquí.
-│   └── CARTERA AL 11032026.xlsx
-│   └── (futuros archivos de trabajos realizados)
-│
-├── 02_Excels_Trabajo/                ← Copias de trabajo. El sistema opera sobre estos.
-│   └── (copias generadas automáticamente al iniciar un proceso)
-│
-├── 03_Backups/                       ← Respaldos con fecha/hora antes de cualquier escritura.
-│   └── (generados automáticamente, nunca manuales)
-│
-├── 04_Reportes_Generados/            ← Reportes de calidad y consultas exportadas.
-│   └── data_quality_report.md
-│   └── (futuros reportes en Excel o PDF)
-│
-├── 05_Muestras_Sin_Datos_Reales/     ← Archivos con estructura real pero datos ficticios.
-│   └── (para pruebas, demos y desarrollo sin exponer información real)
-│
-└── 06_Documentacion/                 ← Guías de uso, flujos, decisiones del proyecto.
-    └── README.md
-    └── TESTING.md
-```
-
-> **Nota:** Esta estructura aún no está conectada al código. Es la organización que se usará cuando se implemente `src/drive_connector.py` en una versión futura.
-
----
-
-## Flujo recomendado de archivos
-
-Este es el proceso que debe seguirse cada vez que se recibe un Excel actualizado, ahora y cuando se integre Drive.
-
-```
-1. RECIBIR EL EXCEL ORIGINAL
-   └── El archivo llega por correo, WhatsApp o Drive desde el cliente.
-       No se edita. No se renombra. No se abre en Excel para "corregir".
-
-2. GUARDAR EN DRIVE (cuando esté integrado)
-   └── Subir a: Cesym Chatbot/01_Excels_Originales/
-       Nombre sugerido: CARTERA AL DDMMYYYY.xlsx
-
-3. COPIAR A CARPETA DE TRABAJO
-   └── El sistema (o el usuario manualmente por ahora) copia el archivo a:
-         - Local:  data/raw/
-         - Drive:  02_Excels_Trabajo/
-       La copia es la que se lee. El original no se toca.
-
-4. EJECUTAR LIMPIEZA Y VALIDACIÓN
-   └── python main.py               ← Carga y limpia los datos
-       python scripts/run_manual_tests.py  ← Genera reporte de calidad
-
-5. REVISAR EL REPORTE DE CALIDAD
-   └── Abrir data_quality_report.md y verificar:
-         - Registros con fechas vacías
-         - OC o cotizaciones duplicadas
-         - Montos inválidos
-         - Registros incompletos
-       Cualquier inconsistencia debe consultarse con el origen del Excel
-       antes de continuar.
-
-6. VALIDAR RESULTADOS CON EL RESPONSABLE DEL EXCEL
-   └── Si hay errores o datos raros, confirmar con la persona que generó
-       el archivo si son válidos o si son errores de captura.
-
-7. SOLO DESPUÉS: PERMITIR AUTOMATIZACIONES
-   └── Una vez validado el Excel, se pueden activar:
-         - Respuestas automáticas por WhatsApp
-         - Exportación de reportes a Drive
-         - Cruce con el segundo Excel (trabajos realizados)
-         - Cualquier proceso que escriba o modifique datos
-```
-
-> **Regla de oro:** Nunca automatizar sobre un Excel que no fue revisado manualmente al menos una vez.
-
----
-
-## Próximas versiones (roadmap)
-
-**v1.x — Mejoras locales**
-- [x] Soporte para el reporte mensual de facturas (CSV)
-- [x] Cruce de información entre cartera y reporte mensual
-- [ ] Detección de facturas y OC duplicadas en el comando `errores`
-- [ ] Sistema de logs para registrar consultas
-
-**v2 — Integración con Google Drive**
-- [x] Descarga automática de archivos desde Google Drive (`src/drive.py`)
-- [ ] Copia automática a carpeta de trabajo antes de procesar
-- [ ] Backup automático con fecha/hora antes de cualquier escritura futura
-- [ ] Exportación de reportes a `04_Reportes_Generados/` en Drive
-
-**v3 — Automatización e IA**
-- [x] Integración con Claude API para consultas en lenguaje natural (`src/ai_query.py`)
-- [ ] Integración del tercer Excel (trabajos a clientes casuales)
-- [ ] Conexión con WhatsApp (n8n o Twilio) para responder consultas desde el celular
-- [ ] Notificaciones automáticas cuando se detecten inconsistencias
+**Pendiente**
+- [ ] Sync automático desde Drive cada X horas (sin necesitar `actualizar` manual)
+- [ ] Editar un trabajo ya registrado desde WhatsApp
+- [ ] Sistema de logs de consultas
+- [ ] Resumen semanal/mensual automático por WhatsApp
