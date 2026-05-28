@@ -62,6 +62,7 @@ El servidor corre en Railway. Al arrancar, descarga los Excels desde Drive a `da
 | `trabajos` | Lista todos los trabajos registrados |
 | `trabajos [mes]` | Trabajos de un mes específico (ej: `trabajos mayo`) |
 | `agregar trabajo` | Inicia el flujo para registrar un trabajo nuevo |
+| `editar trabajo` | Edita un campo de un trabajo ya registrado |
 
 ### Búsquedas
 
@@ -113,6 +114,7 @@ El servidor necesita estas variables configuradas en Railway:
 | `GOOGLE_CREDENTIALS_JSON` | Contenido de `credentials.json` en base64 |
 | `GOOGLE_TOKEN_JSON` | Contenido de `token.json` en base64 |
 | `ANTHROPIC_API_KEY` | API key de Anthropic (para el fallback de lenguaje natural) |
+| `SYNC_INTERVALO_HORAS` | Cada cuántas horas sincronizar Drive automáticamente (default: `6`) |
 
 Para generar los valores base64 de las credenciales de Drive:
 
@@ -215,7 +217,7 @@ Los archivos viven en la carpeta `02_Excels_Trabajo` de Google Drive.
 | `reporteMensual_FACTURAS.csv` | Historial de facturas con fechas de pago |
 | `CONTROL DE INST. MINISPLIT 2026.xlsx` | Registro de trabajos realizados a clientes |
 
-El sistema descarga estos archivos automáticamente al iniciar. Para forzar una actualización desde WhatsApp, enviar `actualizar`.
+El sistema descarga estos archivos automáticamente al iniciar y los re-sincroniza cada 6 horas en background (configurable con `SYNC_INTERVALO_HORAS`). Para forzar una actualización inmediata desde WhatsApp, enviar `actualizar`.
 
 ---
 
@@ -239,9 +241,9 @@ El sistema descarga estos archivos automáticamente al iniciar. Para forzar una 
 - [x] Tercer Excel: registro de trabajos
 - [x] Flujo de registro de trabajo desde WhatsApp
 - [x] Escritura al Excel con backup automático
+- [x] Editar un trabajo ya registrado desde WhatsApp
+- [x] Sync automático desde Drive cada N horas en background
 
 **Pendiente**
-- [ ] Sync automático desde Drive cada X horas (sin necesitar `actualizar` manual)
-- [ ] Editar un trabajo ya registrado desde WhatsApp
 - [ ] Sistema de logs de consultas
 - [ ] Resumen semanal/mensual automático por WhatsApp
