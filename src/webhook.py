@@ -20,7 +20,7 @@ from fastapi import FastAPI, Form, Response
 from src.cli import _cargar_dotenv, _cargar_datos, _sincronizar_drive
 from src.query_engine import run_query
 
-_LIMITE_WA = 4000  # Twilio trunca mensajes > 4096 chars
+_LIMITE_WA = 1500  # limite por mensaje de WhatsApp via Twilio
 
 # ─── Estado global ─────────────────────────────────────────────────────────────
 _datos: dict = {
@@ -91,14 +91,35 @@ app = FastAPI(lifespan=lifespan)
 
 
 # ─── Helpers ───────────────────────────────────────────────────────────────────
+def _dividir_texto(texto: str) -> list[str]:
+    """
+    Divide un texto largo en partes de max _LIMITE_WA caracteres,
+    cortando siempre en saltos de línea para no partir líneas a la mitad.
+    """
+    if len(texto) <= _LIMITE_WA:
+        return [texto]
+
+    partes = []
+    while texto:
+        if len(texto) <= _LIMITE_WA:
+            partes.append(texto)
+            break
+        corte = texto.rfind("\n", 0, _LIMITE_WA)
+        if corte == -1:
+            corte = _LIMITE_WA
+        partes.append(texto[:corte].rstrip())
+        texto = texto[corte:].lstrip("\n")
+
+    return partes
+
+
 def _twiml(texto: str) -> Response:
-    """Empaqueta texto en TwiML. Trunca si supera el límite de WhatsApp."""
+    """Empaqueta texto en TwiML. Si supera el límite, lo divide en múltiples mensajes."""
     from twilio.twiml.messaging_response import MessagingResponse
 
-    if len(texto) > _LIMITE_WA:
-        texto = texto[:_LIMITE_WA - 60] + "\n...(respuesta muy larga, afiná la consulta)"
     r = MessagingResponse()
-    r.message(texto)
+    for parte in _dividir_texto(texto):
+        r.message(parte)
     return Response(content=str(r), media_type="application/xml")
 
 

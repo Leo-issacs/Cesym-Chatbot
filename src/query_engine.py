@@ -508,41 +508,35 @@ def _ayuda() -> str:
   ───────────────
   facturas                 → Todas las OC facturadas
   pendientes               → Todas las cotizaciones pendientes
-  pendientes [suc]         → Pendientes de una sucursal específica
+  pendientes [suc]         → Pendientes de una sucursal especifica
   estado [texto]           → Filtrar por estado (ej: estado aceptada)
   estado prioridad         → Solo las facturas marcadas como prioridad
 
-  REPORTE MENSUAL (CSV)
-  ─────────────────────
-  cobradas                 → Facturas del reporte con fecha de pago
-  sin cobrar               → Facturas del reporte sin fecha de pago
-  buscar cliente [nombre]  → Facturas de un cliente (ej: buscar cliente waldos)
+  REPORTE MENSUAL
+  ───────────────
+  cobradas                 → Facturas con fecha de pago
+  sin cobrar               → Facturas sin fecha de pago
+  buscar cliente [nombre]  → Facturas de un cliente
 
   CRUCE
   ─────
-  cruce                    → Facturas en cartera que ya tienen pago en el reporte mensual
+  cruce                    → Facturas en cartera ya pagadas en el reporte
 
-  BÚSQUEDAS
-  ─────────
-  buscar oc [texto]        → Buscar por número de OC (ej: buscar oc O01-507749)
-  buscar factura [número]  → Buscar por número de factura
-  buscar cot [número]      → Buscar cotización pendiente por número
-  buscar suc [número]      → Pendientes de una sucursal
+  BUSCAR
+  ──────
+  buscar oc [texto]        → Por numero de OC
+  buscar factura [num]     → Por numero de factura
+  buscar cot [num]         → Por cotizacion pendiente
+  buscar suc [num]         → Pendientes de una sucursal
+  buscar tecnico [nombre]  → Trabajos de un tecnico
 
   TRABAJOS CASUALES
   ─────────────────
-  trabajos                 → Todos los trabajos registrados
-  trabajos [mes]           → Trabajos de un mes (ej: trabajos enero)
-  total trabajos           → Total cobrado y pendiente de cobro
-  buscar tecnico [nombre]  → Trabajos de un técnico específico
-
-  VALIDACIONES
-  ────────────
-  errores                  → Detectar inconsistencias en los datos
+  trabajos                 → Todos los trabajos
+  trabajos [mes]           → Trabajos de un mes (ej: enero)
+  total trabajos           → Total cobrado y pendiente
 
   OTROS
   ─────
-  actualizar               → Descargar los archivos desde Google Drive
-  ayuda                    → Mostrar este menú
-  salir                    → Cerrar el sistema
+  errores | actualizar | ayuda
 """.strip()
