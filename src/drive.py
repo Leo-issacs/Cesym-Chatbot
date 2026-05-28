@@ -38,6 +38,33 @@ DEFAULT_CREDENTIALS_PATH = CREDENTIALS_DIR / "credentials.json"
 DATA_RAW_DIR = BASE_DIR / "data" / "raw"
 
 
+def init_credenciales_desde_env():
+    """
+    En despliegues cloud (Railway/Render) no hay archivos locales.
+    Lee las credenciales de Google desde variables de entorno (base64),
+    las decodifica y las escribe en disco para que autenticar() las encuentre.
+
+    Variables esperadas:
+      GOOGLE_CREDENTIALS_JSON → contenido de credentials.json en base64
+      GOOGLE_TOKEN_JSON       → contenido de token.json en base64
+    """
+    import base64
+
+    CREDENTIALS_DIR.mkdir(exist_ok=True)
+
+    raw_creds = os.getenv("GOOGLE_CREDENTIALS_JSON")
+    if raw_creds and not DEFAULT_CREDENTIALS_PATH.exists():
+        DEFAULT_CREDENTIALS_PATH.write_text(
+            base64.b64decode(raw_creds).decode("utf-8")
+        )
+
+    raw_token = os.getenv("GOOGLE_TOKEN_JSON")
+    if raw_token and not TOKEN_PATH.exists():
+        TOKEN_PATH.write_text(
+            base64.b64decode(raw_token).decode("utf-8")
+        )
+
+
 def _get_credentials_path() -> Path:
     env_path = os.getenv("GOOGLE_CREDENTIALS_PATH")
     if not env_path:
