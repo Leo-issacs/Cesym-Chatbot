@@ -258,8 +258,8 @@ def clean_trabajos(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
     df = df.iloc[:, [0, 1, 2, 3, 4, 5, 6, 8, 9]].copy()
     df.columns = ["mes", "tecnico", "cliente", "rep_num", "domicilio", "telefono", "tipo_trabajo", "pagado", "recibe"]
 
-    # Eliminar filas vacías: sin cliente ni tipo de trabajo
-    df = df[~(df["cliente"].isna() & df["tipo_trabajo"].isna())].copy()
+    # Conservar solo filas con cliente Y tipo de trabajo (filtra celdas sueltas y filas vacías)
+    df = df[df["cliente"].notna() & df["tipo_trabajo"].notna()].copy()
 
     # --- Conversión de tipos ---
     df["mes"] = df["mes"].astype(str).str.strip().str.upper().replace("NAN", "")

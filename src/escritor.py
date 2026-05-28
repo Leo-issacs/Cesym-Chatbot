@@ -66,8 +66,12 @@ def agregar_trabajo(datos: dict) -> str:
     # Backup antes de escribir
     _hacer_backup(path)
 
-    # Leer Excel existente
+    # Leer Excel existente y limpiar filas sin cliente ni tipo de trabajo
+    # (evita que filas vacías o celdas sueltas desplacen los registros nuevos)
     df = pd.read_excel(path, header=0, dtype=str)
+    cliente_col = df.columns[2]
+    tipo_col = df.columns[6]
+    df = df[df[cliente_col].notna() & df[tipo_col].notna()].reset_index(drop=True)
 
     # Construir nueva fila usando los nombres de columna originales del Excel
     nueva_fila = {
