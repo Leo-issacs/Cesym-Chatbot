@@ -30,6 +30,28 @@ def _hacer_backup(ruta_original: Path) -> Path:
     return destino
 
 
+_COLUMNAS_TRABAJOS = [
+    "ENERO", "TECNICO", "CLIENTE", "REP #",
+    "DOMICILIO", "TELEFONO", "TIPO DE TRABAJO",
+    "Unnamed: 7", "PAGADO", "RECIBE",
+]
+
+
+def _obtener_o_crear_archivo_trabajos() -> Path:
+    """
+    Retorna la ruta del archivo de trabajos.
+    Si no existe, lo crea con los headers correctos en data/raw/.
+    """
+    try:
+        return _resolver_ruta_trabajos()
+    except FileNotFoundError:
+        from src.loader import DATA_RAW_DIR
+        DATA_RAW_DIR.mkdir(parents=True, exist_ok=True)
+        path = DATA_RAW_DIR / "CONTROL DE INST. MINISPLIT 2026.xlsx"
+        pd.DataFrame(columns=_COLUMNAS_TRABAJOS).to_excel(path, index=False)
+        return path
+
+
 def agregar_trabajo(datos: dict) -> str:
     """
     Agrega una fila al Excel de control de trabajos, hace backup y sube a Drive.
@@ -39,10 +61,7 @@ def agregar_trabajo(datos: dict) -> str:
 
     Retorna mensaje de resultado (exito o error).
     """
-    try:
-        path = _resolver_ruta_trabajos()
-    except FileNotFoundError as e:
-        return f"Error: {e}"
+    path = _obtener_o_crear_archivo_trabajos()
 
     # Backup antes de escribir
     _hacer_backup(path)
