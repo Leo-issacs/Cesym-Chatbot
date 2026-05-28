@@ -19,6 +19,8 @@ from fastapi import FastAPI, Form, Response
 
 from src.cli import _cargar_dotenv, _cargar_datos, _sincronizar_drive
 from src.query_engine import run_query
+from src.sesiones import tiene_sesion, iniciar, procesar, cancelar
+from src.escritor import agregar_trabajo
 
 _LIMITE_WA = 1500  # limite por mensaje de WhatsApp via Twilio
 
@@ -156,14 +158,29 @@ async def health():
 
 
 @app.post("/webhook")
-async def webhook(Body: str = Form(...)):
+async def webhook(Body: str = Form(...), From: str = Form(...)):
     entrada = Body.strip()
+    numero = From  # ej: "whatsapp:+521234567890"
 
     if not entrada:
         return _twiml("Hola. Escribe 'ayuda' para ver los comandos disponibles.")
 
+    # --- Sesion activa (flujo de registro de trabajo) ---
+    if tiene_sesion(numero):
+        mensaje, datos_completos = procesar(numero, entrada)
+        if datos_completos is not None:
+            # Usuario confirmó — guardar en Excel
+            resultado = agregar_trabajo(datos_completos)
+            _recargar_datos()  # refrescar datos en memoria
+            return _twiml(resultado)
+        return _twiml(mensaje)
+
     if entrada.lower() in ("salir", "exit", "quit"):
         return _twiml("Escribe 'ayuda' para ver los comandos disponibles.")
+
+    # Iniciar flujo de registro
+    if entrada.lower() in ("agregar trabajo", "nuevo trabajo", "registrar trabajo", "agregar"):
+        return _twiml(iniciar(numero))
 
     if not _hay_datos() and entrada.lower() != "actualizar":
         return _twiml(
