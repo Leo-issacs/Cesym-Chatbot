@@ -11,6 +11,7 @@ Despliegue cloud (Railway / Render):
     Procfile: web: uvicorn src.webhook:app --host 0.0.0.0 --port $PORT
 """
 
+import asyncio
 import os
 from contextlib import asynccontextmanager
 from difflib import get_close_matches
@@ -87,7 +88,25 @@ async def lifespan(app: FastAPI):
         pass  # Sin datos — el usuario debe enviar 'actualizar' desde WhatsApp
 
     _init_ia()
+
+    # Sync automático desde Drive cada N horas (configurable con SYNC_INTERVALO_HORAS)
+    intervalo_horas = int(os.getenv("SYNC_INTERVALO_HORAS", "6"))
+    if os.getenv("DRIVE_FOLDER_ID"):
+        asyncio.create_task(_sync_periodico(intervalo_horas))
+
     yield
+
+
+async def _sync_periodico(intervalo_horas: int):
+    """Sincroniza Drive en background cada N horas."""
+    while True:
+        await asyncio.sleep(intervalo_horas * 3600)
+        try:
+            _sincronizar_drive()
+            _recargar_datos()
+            print(f"[sync] Datos actualizados automáticamente desde Drive.")
+        except Exception as e:
+            print(f"[sync] Error al sincronizar: {e}")
 
 
 app = FastAPI(lifespan=lifespan)
