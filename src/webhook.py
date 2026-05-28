@@ -13,14 +13,15 @@ Despliegue cloud (Railway / Render):
 
 import os
 from contextlib import asynccontextmanager
+from difflib import get_close_matches
 
 import pandas as pd
 from fastapi import FastAPI, Form, Response
 
 from src.cli import _cargar_dotenv, _cargar_datos, _sincronizar_drive
 from src.query_engine import run_query
-from src.sesiones import tiene_sesion, iniciar, procesar, cancelar
-from src.escritor import agregar_trabajo
+from src.sesiones import tiene_sesion, iniciar, iniciar_editar, procesar, cancelar
+from src.escritor import agregar_trabajo, editar_trabajo
 
 _LIMITE_WA = 1500  # limite por mensaje de WhatsApp via Twilio
 
@@ -125,6 +126,64 @@ def _twiml(texto: str) -> Response:
     return Response(content=str(r), media_type="application/xml")
 
 
+_TRIGGERS_AGREGAR = ["agregar trabajo", "nuevo trabajo", "registrar trabajo"]
+_TRIGGERS_EDITAR  = ["editar trabajo", "modificar trabajo", "corregir trabajo"]
+
+
+def _es_agregar_trabajo(texto: str) -> bool:
+    t = texto.lower().strip()
+    if t in (*_TRIGGERS_AGREGAR, "agregar"):
+        return True
+    return bool(get_close_matches(t, _TRIGGERS_AGREGAR, n=1, cutoff=0.82))
+
+
+def _es_editar_trabajo(texto: str) -> bool:
+    t = texto.lower().strip()
+    if t in _TRIGGERS_EDITAR:
+        return True
+    return bool(get_close_matches(t, _TRIGGERS_EDITAR, n=1, cutoff=0.82))
+
+
+def _formatear_para_editar(trabajos_df: pd.DataFrame) -> list[dict]:
+    """Convierte el DataFrame de trabajos a lista de dicts JSON-serializable."""
+    if trabajos_df is None or trabajos_df.empty:
+        return []
+    n = min(10, len(trabajos_df))
+    df_tail = trabajos_df.iloc[-n:].reset_index(drop=True)
+    offset = len(trabajos_df) - n
+    resultado = []
+    for i in range(len(df_tail)):
+        row = df_tail.iloc[i]
+
+        def s(val):
+            try:
+                if pd.isna(val):
+                    return ""
+            except (TypeError, ValueError):
+                pass
+            v = str(val).strip()
+            return "" if v in ("nan", "NaN", "None") else v
+
+        pagado_raw = row["pagado"]
+        try:
+            pagado_str = str(float(pagado_raw)) if pd.notna(pagado_raw) else ""
+        except (TypeError, ValueError):
+            pagado_str = ""
+
+        resultado.append({
+            "indice_real": offset + i,
+            "mes":         s(row["mes"]),
+            "tecnico":     s(row["tecnico"]),
+            "cliente":     s(row["cliente"]),
+            "tipo_trabajo":s(row["tipo_trabajo"]),
+            "domicilio":   s(row["domicilio"]),
+            "telefono":    s(row["telefono"]),
+            "pagado":      pagado_str,
+            "recibe":      s(row["recibe"]),
+        })
+    return resultado
+
+
 def _ejecutar_consulta(entrada: str) -> str:
     respuesta = run_query(
         entrada,
@@ -165,22 +224,33 @@ async def webhook(Body: str = Form(...), From: str = Form(...)):
     if not entrada:
         return _twiml("Hola. Escribe 'ayuda' para ver los comandos disponibles.")
 
-    # --- Sesion activa (flujo de registro de trabajo) ---
+    # --- Sesion activa (flujo de registro o edición) ---
     if tiene_sesion(numero):
         mensaje, datos_completos = procesar(numero, entrada)
         if datos_completos is not None:
-            # Usuario confirmó — guardar en Excel
-            resultado = agregar_trabajo(datos_completos)
-            _recargar_datos()  # refrescar datos en memoria
+            if datos_completos.get("tipo") == "editar":
+                resultado = editar_trabajo(
+                    datos_completos["indice"],
+                    datos_completos["campo"],
+                    datos_completos["valor"],
+                )
+            else:
+                resultado = agregar_trabajo(datos_completos)
+            _recargar_datos()
             return _twiml(resultado)
         return _twiml(mensaje)
 
     if entrada.lower() in ("salir", "exit", "quit"):
         return _twiml("Escribe 'ayuda' para ver los comandos disponibles.")
 
-    # Iniciar flujo de registro
-    if entrada.lower() in ("agregar trabajo", "nuevo trabajo", "registrar trabajo", "agregar"):
+    # Iniciar flujo de registro (con tolerancia a typos)
+    if _es_agregar_trabajo(entrada):
         return _twiml(iniciar(numero))
+
+    # Iniciar flujo de edición
+    if _es_editar_trabajo(entrada):
+        registros = _formatear_para_editar(_datos["trabajos"])
+        return _twiml(iniciar_editar(numero, registros))
 
     if not _hay_datos() and entrada.lower() != "actualizar":
         return _twiml(

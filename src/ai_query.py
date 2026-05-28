@@ -30,8 +30,13 @@ buscar factura [número]
 buscar cot [número]
 buscar suc [número]
 buscar cliente [nombre]
+buscar tecnico [nombre]
 estado [texto]
 estado prioridad
+trabajos
+trabajos [mes]
+agregar trabajo
+editar trabajo
 errores
 actualizar
 ayuda

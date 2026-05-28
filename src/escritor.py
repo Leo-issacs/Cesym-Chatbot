@@ -30,6 +30,17 @@ def _hacer_backup(ruta_original: Path) -> Path:
     return destino
 
 
+_CAMPO_A_COLUMNA_IDX = {
+    "mes":          0,
+    "tecnico":      1,
+    "cliente":      2,
+    "domicilio":    4,
+    "telefono":     5,
+    "tipo_trabajo": 6,
+    "pagado":       8,
+    "recibe":       9,
+}
+
 _COLUMNAS_TRABAJOS = [
     "ENERO", "TECNICO", "CLIENTE", "REP #",
     "DOMICILIO", "TELEFONO", "TIPO DE TRABAJO",
@@ -108,3 +119,57 @@ def agregar_trabajo(datos: dict) -> str:
         f"Trabajo registrado correctamente.\n"
         f"{datos['cliente']} | {datos['tipo_trabajo']} | {pago_str}"
     )
+
+
+def _subir_a_drive(path: Path) -> str | None:
+    """Sube el archivo a Drive. Retorna mensaje de error o None si todo bien."""
+    import os
+    folder_id = os.getenv("DRIVE_FOLDER_ID")
+    if not folder_id:
+        return None
+    try:
+        from src.drive import subir_excel
+        subir_excel(path, folder_id)
+        return None
+    except Exception as e:
+        return (
+            f"Guardado localmente, pero no se pudo subir a Drive: {e}\n"
+            "Usa 'actualizar' para sincronizar manualmente."
+        )
+
+
+def editar_trabajo(indice: int, campo: str, valor: str) -> str:
+    """
+    Modifica un campo de un trabajo existente en el Excel.
+
+    indice: posición 0-based en el DataFrame limpio (mismo orden que muestra el bot)
+    campo:  nombre del campo (mes, tecnico, cliente, domicilio, telefono,
+                              tipo_trabajo, pagado, recibe)
+    valor:  nuevo valor como string (vacío string = borrar el campo)
+
+    Retorna mensaje de resultado.
+    """
+    col_idx = _CAMPO_A_COLUMNA_IDX.get(campo)
+    if col_idx is None:
+        return f"Campo '{campo}' no reconocido."
+
+    path = _obtener_o_crear_archivo_trabajos()
+    _hacer_backup(path)
+
+    df = pd.read_excel(path, header=0, dtype=str)
+    cliente_col = df.columns[2]
+    tipo_col = df.columns[6]
+    df_limpio = df[df[cliente_col].notna() & df[tipo_col].notna()].reset_index(drop=True)
+
+    if indice < 0 or indice >= len(df_limpio):
+        return "Error: trabajo no encontrado."
+
+    col_name = df_limpio.columns[col_idx]
+    df_limpio.at[indice, col_name] = valor if valor else None
+    df_limpio.to_excel(path, index=False)
+
+    error_drive = _subir_a_drive(path)
+    if error_drive:
+        return error_drive
+
+    return f"Trabajo actualizado correctamente."
