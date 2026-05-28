@@ -58,18 +58,13 @@ def traducir_a_comando(texto: str, client: anthropic.Anthropic) -> str:
         respuesta = client.messages.create(
             model="claude-haiku-4-5-20251001",
             max_tokens=64,
-            system=[
-                {
-                    "type": "text",
-                    "text": _SYSTEM_PROMPT,
-                    "cache_control": {"type": "ephemeral"},
-                }
-            ],
+            system=_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": texto}],
         )
         resultado = respuesta.content[0].text.strip().lower()
         if resultado == "irreconocible":
             return ""
         return resultado
-    except Exception:
+    except Exception as e:
+        print(f"[ai_query] Error al traducir '{texto}': {e}")
         return ""
