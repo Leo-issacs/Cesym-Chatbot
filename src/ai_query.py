@@ -37,6 +37,7 @@ trabajos
 trabajos [mes]
 agregar trabajo
 editar trabajo
+borrar trabajo
 errores
 actualizar
 ayuda

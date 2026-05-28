@@ -138,6 +138,33 @@ def _subir_a_drive(path: Path) -> str | None:
         )
 
 
+def borrar_trabajo(indice: int) -> str:
+    """
+    Elimina un trabajo del Excel por su índice en el DataFrame limpio.
+    Hace backup antes de modificar y sube a Drive.
+    """
+    path = _obtener_o_crear_archivo_trabajos()
+    _hacer_backup(path)
+
+    df = pd.read_excel(path, header=0, dtype=str)
+    cliente_col = df.columns[2]
+    tipo_col = df.columns[6]
+    df_limpio = df[df[cliente_col].notna() & df[tipo_col].notna()].reset_index(drop=True)
+
+    if indice < 0 or indice >= len(df_limpio):
+        return "Error: trabajo no encontrado."
+
+    cliente = df_limpio.at[indice, cliente_col]
+    df_limpio = df_limpio.drop(index=indice).reset_index(drop=True)
+    df_limpio.to_excel(path, index=False)
+
+    error_drive = _subir_a_drive(path)
+    if error_drive:
+        return error_drive
+
+    return f"Trabajo de '{cliente}' eliminado correctamente."
+
+
 def editar_trabajo(indice: int, campo: str, valor: str) -> str:
     """
     Modifica un campo de un trabajo existente en el Excel.

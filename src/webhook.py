@@ -21,8 +21,8 @@ from fastapi import FastAPI, Form, Response
 
 from src.cli import _cargar_dotenv, _cargar_datos, _sincronizar_drive
 from src.query_engine import run_query
-from src.sesiones import tiene_sesion, iniciar, iniciar_editar, procesar, cancelar
-from src.escritor import agregar_trabajo, editar_trabajo
+from src.sesiones import tiene_sesion, iniciar, iniciar_editar, iniciar_borrar, procesar, cancelar
+from src.escritor import agregar_trabajo, editar_trabajo, borrar_trabajo
 from src.logger import registrar, leer_recientes
 
 _LIMITE_WA = 1500  # limite por mensaje de WhatsApp via Twilio
@@ -148,6 +148,7 @@ def _twiml(texto: str) -> Response:
 
 _TRIGGERS_AGREGAR = ["agregar trabajo", "nuevo trabajo", "registrar trabajo"]
 _TRIGGERS_EDITAR  = ["editar trabajo", "modificar trabajo", "corregir trabajo"]
+_TRIGGERS_BORRAR  = ["borrar trabajo", "eliminar trabajo", "cancelar trabajo"]
 
 
 def _es_agregar_trabajo(texto: str) -> bool:
@@ -155,6 +156,13 @@ def _es_agregar_trabajo(texto: str) -> bool:
     if t in (*_TRIGGERS_AGREGAR, "agregar"):
         return True
     return bool(get_close_matches(t, _TRIGGERS_AGREGAR, n=1, cutoff=0.82))
+
+
+def _es_borrar_trabajo(texto: str) -> bool:
+    t = texto.lower().strip()
+    if t in _TRIGGERS_BORRAR:
+        return True
+    return bool(get_close_matches(t, _TRIGGERS_BORRAR, n=1, cutoff=0.82))
 
 
 def _es_editar_trabajo(texto: str) -> bool:
@@ -254,6 +262,8 @@ async def webhook(Body: str = Form(...), From: str = Form(...)):
                     datos_completos["campo"],
                     datos_completos["valor"],
                 )
+            elif datos_completos.get("tipo") == "borrar":
+                resultado = borrar_trabajo(datos_completos["indice"])
             else:
                 resultado = agregar_trabajo(datos_completos)
             _recargar_datos()
@@ -267,7 +277,11 @@ async def webhook(Body: str = Form(...), From: str = Form(...)):
     if entrada.lower() == "logs":
         return _twiml(leer_recientes(20))
 
-    # Editar va primero — "editar trabajo" tiene alta similitud con "agregar trabajo" en difflib
+    # Borrar y editar van primero — comparten alta similitud con "agregar trabajo" en difflib
+    if _es_borrar_trabajo(entrada):
+        registros = _formatear_para_editar(_datos["trabajos"])
+        return _twiml(iniciar_borrar(numero, registros))
+
     if _es_editar_trabajo(entrada):
         registros = _formatear_para_editar(_datos["trabajos"])
         return _twiml(iniciar_editar(numero, registros))

@@ -3,16 +3,16 @@ logger.py
 ---------
 Registro de consultas al bot. Guarda en data/logs/queries.log.
 
-Cada entrada incluye: timestamp, número (enmascarado), consulta y respuesta corta.
-Los logs sobreviven reinicios del servidor pero se pierden en deploys nuevos.
+Retención: 30 días. En cada escritura se podan entradas más antiguas.
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 _LOGS_DIR = Path(__file__).parent.parent / "data" / "logs"
 _LOG_PATH = _LOGS_DIR / "queries.log"
 _MAX_RESP_CHARS = 120
+_RETENTION_DIAS = 30
 
 
 def _enmascarar(numero: str) -> str:
@@ -23,8 +23,22 @@ def _enmascarar(numero: str) -> str:
     return "****"
 
 
+def _podar(lineas: list[str]) -> list[str]:
+    """Elimina entradas con más de _RETENTION_DIAS días de antigüedad."""
+    limite = datetime.now() - timedelta(days=_RETENTION_DIAS)
+    resultado = []
+    for linea in lineas:
+        try:
+            ts = datetime.strptime(linea[1:20], "%Y-%m-%d %H:%M:%S")
+            if ts >= limite:
+                resultado.append(linea)
+        except (ValueError, IndexError):
+            resultado.append(linea)  # conservar líneas con formato inesperado
+    return resultado
+
+
 def registrar(numero: str, consulta: str, respuesta: str) -> None:
-    """Agrega una línea al log. Falla silenciosamente si hay error de escritura."""
+    """Agrega una línea al log y poda entradas viejas. Falla silenciosamente."""
     try:
         _LOGS_DIR.mkdir(parents=True, exist_ok=True)
         ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -32,9 +46,15 @@ def registrar(numero: str, consulta: str, respuesta: str) -> None:
         resp_corta = respuesta.replace("\n", " ")[:_MAX_RESP_CHARS]
         if len(respuesta) > _MAX_RESP_CHARS:
             resp_corta += "..."
-        linea = f"[{ts}] {num} | {consulta!r} → {resp_corta}\n"
-        with _LOG_PATH.open("a", encoding="utf-8") as f:
-            f.write(linea)
+        nueva = f"[{ts}] {num} | {consulta!r} → {resp_corta}"
+
+        lineas = []
+        if _LOG_PATH.exists():
+            lineas = _LOG_PATH.read_text(encoding="utf-8").splitlines()
+        lineas.append(nueva)
+        lineas = _podar(lineas)
+
+        _LOG_PATH.write_text("\n".join(lineas) + "\n", encoding="utf-8")
     except Exception:
         pass
 
