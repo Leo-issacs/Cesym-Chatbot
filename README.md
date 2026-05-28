@@ -324,12 +324,13 @@ Este es el proceso que debe seguirse cada vez que se recibe un Excel actualizado
 - [ ] Sistema de logs para registrar consultas
 
 **v2 — Integración con Google Drive**
-- [ ] `src/drive_connector.py` — descarga el Excel desde Drive sin modificar el original
+- [x] Descarga automática de archivos desde Google Drive (`src/drive.py`)
 - [ ] Copia automática a carpeta de trabajo antes de procesar
 - [ ] Backup automático con fecha/hora antes de cualquier escritura futura
 - [ ] Exportación de reportes a `04_Reportes_Generados/` en Drive
 
 **v3 — Automatización e IA**
-- [ ] Integración con Claude API para consultas en lenguaje natural
+- [x] Integración con Claude API para consultas en lenguaje natural (`src/ai_query.py`)
+- [ ] Integración del tercer Excel (trabajos a clientes casuales)
 - [ ] Conexión con WhatsApp (n8n o Twilio) para responder consultas desde el celular
 - [ ] Notificaciones automáticas cuando se detecten inconsistencias
