@@ -101,7 +101,10 @@ def load_pendiente(excel_path: Path | None = None) -> pd.DataFrame:
 
 
 def _resolver_ruta_facturas_mensual(ruta_explicita: Path | None = None) -> Path:
-    """Determina qué archivo CSV de reporte mensual usar."""
+    """
+    Determina qué archivo de reporte mensual usar.
+    Acepta .xlsx o .csv. Si existen ambos, prefiere el más reciente.
+    """
     if ruta_explicita:
         return ruta_explicita
 
@@ -110,26 +113,36 @@ def _resolver_ruta_facturas_mensual(ruta_explicita: Path | None = None) -> Path:
         return Path(env_path)
 
     candidatos = sorted(
-        DATA_RAW_DIR.glob("reporteMensual*.csv"),
+        list(DATA_RAW_DIR.glob("reporteMensual*.xlsx")) +
+        list(DATA_RAW_DIR.glob("reporteMensual*.csv")),
         key=lambda p: p.stat().st_mtime,
         reverse=True,
     )
+    # Ignorar archivos temporales de Excel (~$...)
+    candidatos = [p for p in candidatos if not p.name.startswith("~$")]
+
     if not candidatos:
         raise FileNotFoundError(
             "No se encontró ningún archivo de reporte mensual en data/raw/.\n"
-            "Coloca el archivo CSV en data/raw/ o descárgalo desde Drive con 'actualizar'."
+            "Coloca el archivo en data/raw/ o descárgalo desde Drive con 'actualizar'."
         )
     return candidatos[0]
 
 
 def load_facturas_mensual(ruta_explicita: Path | None = None) -> pd.DataFrame:
     """
-    Carga el reporte mensual de facturas desde un archivo CSV.
+    Carga el reporte mensual de facturas desde un archivo CSV o XLSX.
 
     Columnas esperadas: Folio, Cliente, Fecha, Concepto, Total, FECHA DE PAGO
-    Devuelve los datos RAW sin limpiar.
+    Devuelve los datos RAW sin limpiar. Las fechas se leen siempre como texto
+    para evitar que Excel las reinterprete en formato MM/DD/YYYY.
     """
     path = _resolver_ruta_facturas_mensual(ruta_explicita)
+
+    if path.suffix.lower() == ".xlsx":
+        # dtype=str evita que pandas/openpyxl auto-convierta fechas
+        return pd.read_excel(path, dtype=str, header=0)
+
     try:
         return pd.read_csv(path, dtype=str, encoding="utf-8-sig")
     except UnicodeDecodeError:

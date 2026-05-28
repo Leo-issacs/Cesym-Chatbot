@@ -123,14 +123,54 @@ def clean_pendiente(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
     return df, advertencias
 
 
+def _parsear_fecha_mensual(serie: pd.Series) -> pd.Series:
+    """
+    Parsea fechas del reporte mensual que pueden venir en dos formatos:
+
+    - 'DD/MM/YYYY'           : Excel no pudo convertir (DD > 12). Se parsea directo.
+    - 'YYYY-MM-DD HH:MM:SS'  : Excel convirtió asumiendo MM/DD. Se invierte mes/día
+                               para recuperar la fecha original DD/MM.
+
+    Esta inversión es necesaria cuando el archivo viene de un XLSX generado desde
+    un CSV con fechas en formato DD/MM/YYYY — Excel las lee al revés.
+    """
+    resultados = []
+    for val in serie.astype(str).str.strip():
+        if val in ("", "nan", "NaT", "None", "NaN"):
+            resultados.append(pd.NaT)
+            continue
+        # Intento 1: DD/MM/YYYY (texto que Excel no convirtió)
+        try:
+            resultados.append(pd.to_datetime(val, format="%d/%m/%Y"))
+            continue
+        except (ValueError, TypeError):
+            pass
+        # Intento 2: YYYY-MM-DD (Excel invirtió DD/MM → recuperar intercambiando mes y día)
+        try:
+            dt = pd.to_datetime(val, format="%Y-%m-%d %H:%M:%S")
+            resultados.append(dt.replace(month=dt.day, day=dt.month))
+            continue
+        except (ValueError, TypeError):
+            pass
+        try:
+            dt = pd.to_datetime(val, format="%Y-%m-%d")
+            resultados.append(dt.replace(month=dt.day, day=dt.month))
+            continue
+        except (ValueError, TypeError):
+            pass
+        resultados.append(pd.NaT)
+
+    return pd.Series(resultados, index=serie.index, dtype="datetime64[us]")
+
+
 def clean_facturas_mensual(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
     """
-    Limpia el reporte mensual de facturas (CSV).
+    Limpia el reporte mensual de facturas (CSV o XLSX).
 
     Columnas originales: Folio, Cliente, Fecha, Concepto, Total, FECHA DE PAGO
     - Descarta filas canceladas
-    - Limpia montos: " $1,234.00 " → 1234.0
-    - Parsea fechas DD/MM/YYYY
+    - Limpia montos: " $1,234.00 " o "1234.0" → 1234.0
+    - Parsea fechas DD/MM/YYYY con corrección automática si vienen de XLSX
     - Normaliza nombres de cliente (strip, uppercase)
 
     Retorna:
@@ -159,7 +199,7 @@ def clean_facturas_mensual(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
     df["cliente"] = df["cliente"].astype(str).str.strip().str.upper().replace("NAN", "")
     df["concepto"] = df["concepto"].astype(str).str.strip()
 
-    # Limpiar monto: " $1,234.00 " → 1234.0
+    # Limpiar monto: " $1,234.00 " o "1234.0" → 1234.0
     df["total"] = (
         df["total"]
         .astype(str)
@@ -168,12 +208,8 @@ def clean_facturas_mensual(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
         .pipe(lambda s: pd.to_numeric(s, errors="coerce"))
     )
 
-    df["fecha"] = pd.to_datetime(
-        df["fecha"].astype(str).str.strip(), format="%d/%m/%Y", errors="coerce"
-    )
-    df["fecha_pago"] = pd.to_datetime(
-        df["fecha_pago"].astype(str).str.strip(), format="%d/%m/%Y", errors="coerce"
-    )
+    df["fecha"] = _parsear_fecha_mensual(df["fecha"])
+    df["fecha_pago"] = _parsear_fecha_mensual(df["fecha_pago"])
 
     df = df.reset_index(drop=True)
 
