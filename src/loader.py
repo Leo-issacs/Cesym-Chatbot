@@ -147,3 +147,42 @@ def load_facturas_mensual(ruta_explicita: Path | None = None) -> pd.DataFrame:
         return pd.read_csv(path, dtype=str, encoding="utf-8-sig")
     except UnicodeDecodeError:
         return pd.read_csv(path, dtype=str, encoding="latin-1")
+
+
+def _resolver_ruta_trabajos(ruta_explicita: Path | None = None) -> Path:
+    """
+    Determina qué archivo de control de trabajos usar.
+    Busca archivos que empiecen con 'CONTROL' en data/raw/.
+    """
+    if ruta_explicita:
+        return ruta_explicita
+
+    env_path = os.getenv("TRABAJOS_PATH")
+    if env_path:
+        return Path(env_path)
+
+    candidatos = sorted(
+        DATA_RAW_DIR.glob("CONTROL*.xlsx"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    candidatos = [p for p in candidatos if not p.name.startswith("~$")]
+
+    if not candidatos:
+        raise FileNotFoundError(
+            "No se encontró ningún archivo de control de trabajos en data/raw/.\n"
+            "El archivo debe empezar con 'CONTROL' y tener extensión .xlsx."
+        )
+    return candidatos[0]
+
+
+def load_trabajos(ruta_explicita: Path | None = None) -> pd.DataFrame:
+    """
+    Carga el control de trabajos a clientes casuales (instalaciones, servicios, etc.).
+
+    Columnas esperadas: MES, TECNICO, CLIENTE, REP #, DOMICILIO, TELEFONO,
+                        TIPO DE TRABAJO, (vacía), PAGADO, RECIBE
+    Devuelve los datos RAW sin limpiar.
+    """
+    path = _resolver_ruta_trabajos(ruta_explicita)
+    return pd.read_excel(path, header=0, dtype=str)

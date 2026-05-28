@@ -16,8 +16,8 @@ import os
 import sys
 from pathlib import Path
 import pandas as pd
-from src.loader import load_facturado, load_pendiente, load_facturas_mensual
-from src.cleaner import clean_facturado, clean_pendiente, clean_facturas_mensual
+from src.loader import load_facturado, load_pendiente, load_facturas_mensual, load_trabajos
+from src.cleaner import clean_facturado, clean_pendiente, clean_facturas_mensual, clean_trabajos
 from src.query_engine import run_query
 
 try:
@@ -69,7 +69,15 @@ def _cargar_datos() -> tuple:
     except FileNotFoundError:
         pass
 
-    return facturado, pendiente, facturas_mensual, adv_fac + adv_pte + adv_mensual
+    trabajos = pd.DataFrame()
+    adv_trabajos = []
+    try:
+        raw_trabajos = load_trabajos()
+        trabajos, adv_trabajos = clean_trabajos(raw_trabajos)
+    except FileNotFoundError:
+        pass
+
+    return facturado, pendiente, facturas_mensual, trabajos, adv_fac + adv_pte + adv_mensual + adv_trabajos
 
 
 def _sincronizar_drive() -> list[str]:
@@ -107,7 +115,7 @@ def run():
 
     # --- Carga ---
     try:
-        facturado, pendiente, facturas_mensual, todas_advertencias = _cargar_datos()
+        facturado, pendiente, facturas_mensual, trabajos, todas_advertencias = _cargar_datos()
     except FileNotFoundError as e:
         print()
         print(f"ERROR: {e}")
@@ -125,6 +133,8 @@ def run():
     print(f"  ✓ OC Pendiente    : {len(pendiente)} registros cargados")
     if not facturas_mensual.empty:
         print(f"  ✓ Reporte Mensual : {len(facturas_mensual)} facturas cargadas")
+    if not trabajos.empty:
+        print(f"  ✓ Trabajos        : {len(trabajos)} registros cargados")
 
     if cliente_ia:
         print("  ✓ IA (Claude)     : habilitada — puedes escribir en lenguaje natural")
@@ -165,11 +175,13 @@ def run():
                 print(f"  ✓ Archivos descargados: {', '.join(descargados)}")
                 print()
                 print("Recargando datos...")
-                facturado, pendiente, facturas_mensual, advertencias = _cargar_datos()
+                facturado, pendiente, facturas_mensual, trabajos, advertencias = _cargar_datos()
                 print(f"  ✓ OC Facturado    : {len(facturado)} registros")
                 print(f"  ✓ OC Pendiente    : {len(pendiente)} registros")
                 if not facturas_mensual.empty:
                     print(f"  ✓ Reporte Mensual : {len(facturas_mensual)} facturas")
+                if not trabajos.empty:
+                    print(f"  ✓ Trabajos        : {len(trabajos)} registros")
                 if advertencias:
                     for adv in advertencias:
                         print(f"    ⚠ {adv}")
@@ -180,7 +192,7 @@ def run():
             print()
             continue
 
-        respuesta = run_query(entrada, facturado, pendiente, facturas_mensual)
+        respuesta = run_query(entrada, facturado, pendiente, facturas_mensual, trabajos)
 
         # Si el parser de reglas no reconoció el comando, intentar con IA
         if respuesta.startswith("Comando no reconocido") and cliente_ia:
@@ -188,7 +200,7 @@ def run():
             if comando_traducido:
                 print()
                 print(f"  [IA] → \"{comando_traducido}\"")
-                respuesta = run_query(comando_traducido, facturado, pendiente, facturas_mensual)
+                respuesta = run_query(comando_traducido, facturado, pendiente, facturas_mensual, trabajos)
 
         print()
         print(respuesta)

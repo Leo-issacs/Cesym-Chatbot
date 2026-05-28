@@ -233,3 +233,64 @@ def clean_facturas_mensual(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
         )
 
     return df, advertencias
+
+
+def clean_trabajos(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
+    """
+    Limpia el control de trabajos a clientes casuales.
+
+    Columnas originales del Excel (por posición):
+      0: MES            → mes del trabajo (ENERO, FEBRERO, etc.)
+      1: TECNICO        → técnico que realizó el trabajo
+      2: CLIENTE        → nombre del cliente
+      3: REP #          → número de reporte/trabajo
+      4: DOMICILIO      → dirección del cliente
+      5: TELEFONO       → teléfono del cliente
+      6: TIPO DE TRABAJO → descripción del servicio realizado
+      7: (vacía)        → se descarta
+      8: PAGADO         → monto cobrado (vacío = no cobrado aún)
+      9: RECIBE         → quién recibe/firma el trabajo
+
+    Retorna:
+        (DataFrame limpio, lista de advertencias)
+    """
+    # Descartar la columna vacía (posición 7)
+    df = df.iloc[:, [0, 1, 2, 3, 4, 5, 6, 8, 9]].copy()
+    df.columns = ["mes", "tecnico", "cliente", "rep_num", "domicilio", "telefono", "tipo_trabajo", "pagado", "recibe"]
+
+    # Eliminar filas vacías: sin cliente ni tipo de trabajo
+    df = df[~(df["cliente"].isna() & df["tipo_trabajo"].isna())].copy()
+
+    # --- Conversión de tipos ---
+    df["mes"] = df["mes"].astype(str).str.strip().str.upper().replace("NAN", "")
+    df["tecnico"] = df["tecnico"].astype(str).str.strip().replace("nan", "")
+    df["cliente"] = df["cliente"].astype(str).str.strip().replace("nan", "")
+    df["rep_num"] = df["rep_num"].astype(str).str.strip().replace("nan", "")
+    df["domicilio"] = df["domicilio"].astype(str).str.strip().replace("nan", "")
+    df["telefono"] = df["telefono"].astype(str).str.strip().replace("nan", "")
+    df["tipo_trabajo"] = df["tipo_trabajo"].astype(str).str.strip().replace("nan", "")
+    df["recibe"] = df["recibe"].astype(str).str.strip().replace("nan", "")
+
+    # PAGADO: intenta parsear como monto numérico; si es "SI"/"NO"/vacío queda NaN
+    df["pagado"] = (
+        df["pagado"]
+        .astype(str)
+        .str.strip()
+        .str.replace(r"[\$,\s]", "", regex=True)
+        .pipe(lambda s: pd.to_numeric(s, errors="coerce"))
+    )
+
+    df = df.reset_index(drop=True)
+
+    # --- Detección de inconsistencias ---
+    advertencias = []
+
+    sin_cliente = df[df["cliente"].isin(["", "nan", "NaN"])]
+    if not sin_cliente.empty:
+        advertencias.append(f"{len(sin_cliente)} trabajo(s) sin cliente registrado")
+
+    sin_tipo = df[df["tipo_trabajo"].isin(["", "nan", "NaN"])]
+    if not sin_tipo.empty:
+        advertencias.append(f"{len(sin_tipo)} trabajo(s) sin tipo de trabajo especificado")
+
+    return df, advertencias

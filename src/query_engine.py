@@ -22,11 +22,15 @@ def run_query(
     facturado: pd.DataFrame,
     pendiente: pd.DataFrame,
     facturas: pd.DataFrame,
+    trabajos: pd.DataFrame = None,
 ) -> str:
     """
     Punto de entrada principal. Recibe el texto del usuario y despacha
     al comando correspondiente.
     """
+    if trabajos is None:
+        trabajos = pd.DataFrame()
+
     partes = cmd.strip().lower().split()
     if not partes:
         return "Escribe un comando. Usa 'ayuda' para ver las opciones disponibles."
@@ -37,11 +41,15 @@ def run_query(
         return _ayuda()
 
     if verbo == "resumen":
-        return _resumen(facturado, pendiente, facturas)
+        return _resumen(facturado, pendiente, facturas, trabajos)
 
     if verbo == "total":
         alcance = " ".join(partes[1:]) if len(partes) > 1 else "general"
-        return _total(alcance, facturado, pendiente, facturas)
+        return _total(alcance, facturado, pendiente, facturas, trabajos)
+
+    if verbo == "trabajos":
+        filtro_mes = " ".join(partes[1:]).upper() if len(partes) > 1 else None
+        return _listar_trabajos(filtro_mes, trabajos)
 
     if verbo == "facturas":
         return _listar_facturas(facturado)
@@ -62,7 +70,7 @@ def run_query(
     if verbo == "buscar" and len(partes) >= 3:
         campo = partes[1]
         valor = " ".join(partes[2:])
-        return _buscar(campo, valor, facturado, pendiente, facturas)
+        return _buscar(campo, valor, facturado, pendiente, facturas, trabajos)
 
     if verbo == "estado" and len(partes) >= 2:
         texto = " ".join(partes[1:])
@@ -79,7 +87,7 @@ def run_query(
 
 # ─── Comandos ─────────────────────────────────────────────────────────────────
 
-def _total(alcance: str, facturado: pd.DataFrame, pendiente: pd.DataFrame, facturas: pd.DataFrame) -> str:
+def _total(alcance: str, facturado: pd.DataFrame, pendiente: pd.DataFrame, facturas: pd.DataFrame, trabajos: pd.DataFrame) -> str:
     if alcance in ("facturado", "oc", "facturas"):
         t = facturado["monto_actual"].sum()
         return f"Total OC Facturado: ${t:,.2f}"
@@ -103,6 +111,17 @@ def _total(alcance: str, facturado: pd.DataFrame, pendiente: pd.DataFrame, factu
             f"Facturas: {len(facturas)}  |  Cobradas: {facturas['fecha_pago'].notna().sum()}  |  Pendientes: {facturas['fecha_pago'].isna().sum()}"
         )
 
+    if alcance in ("trabajos", "servicios", "casual", "casuales"):
+        if trabajos.empty:
+            return "El control de trabajos no está cargado."
+        cobrado = trabajos["pagado"].sum()
+        sin_cobrar = trabajos[trabajos["pagado"].isna()]
+        return (
+            f"Total trabajos: {len(trabajos)}\n"
+            f"  Cobrado      : ${cobrado:>12,.2f}\n"
+            f"  Sin cobrar   : {len(sin_cobrar)} trabajo(s)"
+        )
+
     # General: cartera (facturado + pendiente)
     t_fac = facturado["monto_actual"].sum()
     t_pte = pendiente["importe"].sum()
@@ -115,7 +134,7 @@ def _total(alcance: str, facturado: pd.DataFrame, pendiente: pd.DataFrame, factu
     )
 
 
-def _resumen(facturado: pd.DataFrame, pendiente: pd.DataFrame, facturas: pd.DataFrame) -> str:
+def _resumen(facturado: pd.DataFrame, pendiente: pd.DataFrame, facturas: pd.DataFrame, trabajos: pd.DataFrame) -> str:
     t_fac = facturado["monto_actual"].sum()
     t_pte = pendiente["importe"].sum()
 
@@ -140,6 +159,18 @@ def _resumen(facturado: pd.DataFrame, pendiente: pd.DataFrame, facturas: pd.Data
             f"    Sin fecha pago : {n_sin_pago:>4}\n"
         )
 
+    bloque_trabajos = ""
+    if not trabajos.empty:
+        t_cobrado = trabajos["pagado"].sum()
+        n_sin_cobrar = int(trabajos["pagado"].isna().sum())
+        bloque_trabajos = (
+            f"\n"
+            f"  ─── Trabajos Casuales ─────────────\n"
+            f"  Trabajos registrados: {len(trabajos):>3}\n"
+            f"    Cobrado    : ${t_cobrado:>12,.2f}\n"
+            f"    Sin cobrar : {n_sin_cobrar:>3} trabajo(s)\n"
+        )
+
     return (
         f"╔══════════════════════════════════╗\n"
         f"       RESUMEN DE CARTERA\n"
@@ -151,6 +182,7 @@ def _resumen(facturado: pd.DataFrame, pendiente: pd.DataFrame, facturas: pd.Data
         f"  Estados (OC Facturado):\n"
         f"{estados_str}"
         f"{bloque_mensual}"
+        f"{bloque_trabajos}"
     )
 
 
@@ -180,7 +212,30 @@ def _listar_pendientes(filtro_suc, pendiente: pd.DataFrame) -> str:
     return resultado + f"\n{'─'*52}\nTotal: ${df['importe'].sum():,.2f}"
 
 
-def _buscar(campo: str, valor: str, facturado: pd.DataFrame, pendiente: pd.DataFrame, facturas: pd.DataFrame) -> str:
+def _listar_trabajos(filtro_mes: str | None, trabajos: pd.DataFrame) -> str:
+    if trabajos.empty:
+        return "El control de trabajos no está cargado."
+
+    df = trabajos.copy()
+    if filtro_mes:
+        df = df[df["mes"].str.upper().str.contains(filtro_mes, na=False)]
+        if df.empty:
+            return f"No hay trabajos registrados para '{filtro_mes}'."
+
+    if df.empty:
+        return "No hay trabajos registrados."
+
+    resultado = _formato_trabajos(df)
+    cobrado = df["pagado"].sum()
+    sin_cobrar = df["pagado"].isna().sum()
+    return (
+        resultado
+        + f"\n{'─'*60}\n"
+        + f"Total: {len(df)} trabajos  |  Cobrado: ${cobrado:,.2f}  |  Sin cobrar: {sin_cobrar}"
+    )
+
+
+def _buscar(campo: str, valor: str, facturado: pd.DataFrame, pendiente: pd.DataFrame, facturas: pd.DataFrame, trabajos: pd.DataFrame) -> str:
     # Buscar por número de OC (búsqueda parcial)
     if campo == "oc":
         mask = facturado["oc"].str.upper().str.contains(valor.upper(), na=False)
@@ -235,9 +290,24 @@ def _buscar(campo: str, valor: str, facturado: pd.DataFrame, pendiente: pd.DataF
         total = resultado["total"].sum()
         return _formato_facturas_mensual(resultado) + f"\n{'─'*52}\nSubtotal: ${total:,.2f}  ({len(resultado)} facturas)"
 
+    # Buscar por técnico en trabajos
+    if campo in ("tecnico", "técnico"):
+        if trabajos.empty:
+            return "El control de trabajos no está cargado."
+        mask = trabajos["tecnico"].str.upper().str.contains(valor.upper(), na=False)
+        resultado = trabajos[mask]
+        if resultado.empty:
+            return f"No se encontraron trabajos para el técnico '{valor}'."
+        cobrado = resultado["pagado"].sum()
+        return (
+            _formato_trabajos(resultado)
+            + f"\n{'─'*60}\n"
+            + f"Total: {len(resultado)} trabajos  |  Cobrado: ${cobrado:,.2f}"
+        )
+
     return (
         f"Campo de búsqueda desconocido: '{campo}'.\n"
-        "Campos válidos: oc, factura, cot, suc, cliente"
+        "Campos válidos: oc, factura, cot, suc, cliente, tecnico"
     )
 
 
@@ -406,6 +476,18 @@ def _formato_facturas_mensual(df: pd.DataFrame) -> str:
     return "\n".join(lineas)
 
 
+def _formato_trabajos(df: pd.DataFrame) -> str:
+    """Devuelve una tabla de texto para trabajos a clientes casuales."""
+    lineas = []
+    for _, fila in df.iterrows():
+        pagado = f"${fila['pagado']:,.2f}" if pd.notna(fila["pagado"]) else "sin cobrar"
+        rep = f"Rep {fila['rep_num']}  " if fila["rep_num"] else ""
+        lineas.append(
+            f"  {rep}{fila['mes']:<8} | {str(fila['cliente']):<20} | {str(fila['tipo_trabajo']):<25} | {pagado}"
+        )
+    return "\n".join(lineas)
+
+
 # ─── Ayuda ────────────────────────────────────────────────────────────────────
 
 def _ayuda() -> str:
@@ -446,6 +528,13 @@ def _ayuda() -> str:
   buscar factura [número]  → Buscar por número de factura
   buscar cot [número]      → Buscar cotización pendiente por número
   buscar suc [número]      → Pendientes de una sucursal
+
+  TRABAJOS CASUALES
+  ─────────────────
+  trabajos                 → Todos los trabajos registrados
+  trabajos [mes]           → Trabajos de un mes (ej: trabajos enero)
+  total trabajos           → Total cobrado y pendiente de cobro
+  buscar tecnico [nombre]  → Trabajos de un técnico específico
 
   VALIDACIONES
   ────────────
