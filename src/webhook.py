@@ -243,14 +243,14 @@ async def webhook(Body: str = Form(...), From: str = Form(...)):
     if entrada.lower() in ("salir", "exit", "quit"):
         return _twiml("Escribe 'ayuda' para ver los comandos disponibles.")
 
-    # Iniciar flujo de registro (con tolerancia a typos)
-    if _es_agregar_trabajo(entrada):
-        return _twiml(iniciar(numero))
-
-    # Iniciar flujo de edición
+    # Editar va primero — "editar trabajo" tiene alta similitud con "agregar trabajo" en difflib
     if _es_editar_trabajo(entrada):
         registros = _formatear_para_editar(_datos["trabajos"])
         return _twiml(iniciar_editar(numero, registros))
+
+    # Iniciar flujo de registro (con tolerancia a typos)
+    if _es_agregar_trabajo(entrada):
+        return _twiml(iniciar(numero))
 
     if not _hay_datos() and entrada.lower() != "actualizar":
         return _twiml(
