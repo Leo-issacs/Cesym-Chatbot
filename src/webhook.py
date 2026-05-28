@@ -23,6 +23,7 @@ from src.cli import _cargar_dotenv, _cargar_datos, _sincronizar_drive
 from src.query_engine import run_query
 from src.sesiones import tiene_sesion, iniciar, iniciar_editar, procesar, cancelar
 from src.escritor import agregar_trabajo, editar_trabajo
+from src.logger import registrar, leer_recientes
 
 _LIMITE_WA = 1500  # limite por mensaje de WhatsApp via Twilio
 
@@ -256,11 +257,15 @@ async def webhook(Body: str = Form(...), From: str = Form(...)):
             else:
                 resultado = agregar_trabajo(datos_completos)
             _recargar_datos()
+            registrar(numero, entrada, resultado)
             return _twiml(resultado)
         return _twiml(mensaje)
 
     if entrada.lower() in ("salir", "exit", "quit"):
         return _twiml("Escribe 'ayuda' para ver los comandos disponibles.")
+
+    if entrada.lower() == "logs":
+        return _twiml(leer_recientes(20))
 
     # Editar va primero — "editar trabajo" tiene alta similitud con "agregar trabajo" en difflib
     if _es_editar_trabajo(entrada):
@@ -292,4 +297,6 @@ async def webhook(Body: str = Form(...), From: str = Form(...)):
         except Exception as e:
             return _twiml(f"Error al actualizar: {e}")
 
-    return _twiml(_ejecutar_consulta(entrada))
+    respuesta = _ejecutar_consulta(entrada)
+    registrar(numero, entrada, respuesta)
+    return _twiml(respuesta)
