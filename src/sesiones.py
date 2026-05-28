@@ -4,9 +4,13 @@ sesiones.py
 Maneja el estado de conversaciones multi-turno por número de teléfono.
 Actualmente solo soporta el flujo de registro de trabajos.
 
-El estado se guarda en memoria — si el servidor se reinicia, las sesiones
-activas se pierden y el usuario debe empezar de nuevo.
+El estado se persiste en data/sesiones.json para sobrevivir reinicios del servidor.
 """
+
+import json
+from pathlib import Path
+
+_SESIONES_PATH = Path(__file__).parent.parent / "data" / "sesiones.json"
 
 _sesiones: dict = {}
 
@@ -24,9 +28,30 @@ _PREGUNTAS = {
 }
 
 
+def _cargar():
+    global _sesiones
+    try:
+        if _SESIONES_PATH.exists():
+            _sesiones = json.loads(_SESIONES_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        _sesiones = {}
+
+
+def _guardar():
+    try:
+        _SESIONES_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _SESIONES_PATH.write_text(json.dumps(_sesiones, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+
+
+_cargar()
+
+
 def iniciar(numero: str) -> str:
     """Inicia el flujo de registro. Retorna la primera pregunta."""
     _sesiones[numero] = {"paso": 0, "datos": {}, "confirmando": False}
+    _guardar()
     return (
         "Registrando nuevo trabajo.\n"
         "Escribe 'cancelar' en cualquier momento para salir.\n\n"
@@ -40,6 +65,7 @@ def tiene_sesion(numero: str) -> bool:
 
 def cancelar(numero: str) -> str:
     _sesiones.pop(numero, None)
+    _guardar()
     return "Registro cancelado."
 
 
@@ -59,9 +85,11 @@ def procesar(numero: str, texto: str) -> tuple[str, dict | None]:
         if texto.strip().lower() in ("si", "sí", "s", "yes", "y", "1"):
             datos = sesion["datos"].copy()
             _sesiones.pop(numero)
+            _guardar()
             return "Guardando...", datos
         else:
             _sesiones.pop(numero)
+            _guardar()
             return "Registro cancelado.", None
 
     # --- Recolección de datos ---
@@ -82,12 +110,14 @@ def procesar(numero: str, texto: str) -> tuple[str, dict | None]:
 
     sesion["datos"][campo] = valor
     sesion["paso"] += 1
+    _guardar()
 
     # ¿Terminó la recolección?
     if sesion["paso"] >= len(_PASOS):
         datos = sesion["datos"]
         pago_str = f"${float(datos['pagado']):,.2f}" if datos.get("pagado") else "sin cobrar"
         sesion["confirmando"] = True
+        _guardar()
 
         return (
             "Confirma el registro:\n\n"
