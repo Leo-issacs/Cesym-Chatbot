@@ -20,6 +20,13 @@ from src.loader import load_facturado, load_pendiente, load_facturas_mensual
 from src.cleaner import clean_facturado, clean_pendiente, clean_facturas_mensual
 from src.query_engine import run_query
 
+try:
+    import anthropic
+    from src.ai_query import traducir_a_comando
+    _ANTHROPIC_DISPONIBLE = True
+except ImportError:
+    _ANTHROPIC_DISPONIBLE = False
+
 
 def _cargar_dotenv():
     """Carga variables desde .env si existe (sin dependencia externa)."""
@@ -32,6 +39,19 @@ def _cargar_dotenv():
             continue
         clave, _, valor = linea.partition("=")
         os.environ.setdefault(clave.strip(), valor.strip())
+
+
+def _iniciar_cliente_ia():
+    """
+    Retorna un cliente Anthropic si el SDK está instalado y la clave está configurada.
+    Retorna None en caso contrario.
+    """
+    if not _ANTHROPIC_DISPONIBLE:
+        return None
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        return None
+    return anthropic.Anthropic(api_key=api_key)
 
 
 def _cargar_datos() -> tuple:
@@ -75,6 +95,9 @@ def run():
     # Cargar variables de entorno desde .env si existe
     _cargar_dotenv()
 
+    # Iniciar cliente de IA (opcional)
+    cliente_ia = _iniciar_cliente_ia()
+
     print()
     print("╔══════════════════════════════════════════════╗")
     print("         CESYM CHATBOT — Consulta de Cartera    ")
@@ -102,6 +125,11 @@ def run():
     print(f"  ✓ OC Pendiente    : {len(pendiente)} registros cargados")
     if not facturas_mensual.empty:
         print(f"  ✓ Reporte Mensual : {len(facturas_mensual)} facturas cargadas")
+
+    if cliente_ia:
+        print("  ✓ IA (Claude)     : habilitada — puedes escribir en lenguaje natural")
+    else:
+        print("  ~ IA (Claude)     : no configurada (agrega ANTHROPIC_API_KEY en .env)")
 
     if todas_advertencias:
         print()
@@ -153,6 +181,15 @@ def run():
             continue
 
         respuesta = run_query(entrada, facturado, pendiente, facturas_mensual)
+
+        # Si el parser de reglas no reconoció el comando, intentar con IA
+        if respuesta.startswith("Comando no reconocido") and cliente_ia:
+            comando_traducido = traducir_a_comando(entrada, cliente_ia)
+            if comando_traducido:
+                print()
+                print(f"  [IA] → \"{comando_traducido}\"")
+                respuesta = run_query(comando_traducido, facturado, pendiente, facturas_mensual)
+
         print()
         print(respuesta)
         print()
