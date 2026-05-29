@@ -12,12 +12,15 @@ Despliegue cloud (Railway / Render):
 """
 
 import asyncio
+import functools
 import os
 from contextlib import asynccontextmanager
 from difflib import get_close_matches
+from pathlib import Path
 
 import pandas as pd
-from fastapi import FastAPI, Form, Response
+from fastapi import FastAPI, Form, Response, HTTPException
+from fastapi.responses import FileResponse
 
 from src.cli import _cargar_dotenv, _cargar_datos, _sincronizar_drive
 from src.query_engine import run_query
@@ -244,6 +247,15 @@ async def health():
     }
 
 
+@app.get("/reportes/{filename}")
+async def servir_reporte(filename: str):
+    """Sirve el HTML del reporte generado."""
+    path = Path(__file__).parent.parent / "data" / "reportes" / filename
+    if not path.exists() or path.suffix != ".html":
+        raise HTTPException(status_code=404, detail="Reporte no encontrado")
+    return FileResponse(path, media_type="text/html")
+
+
 @app.post("/webhook")
 async def webhook(Body: str = Form(...), From: str = Form(...)):
     entrada = Body.strip()
@@ -297,25 +309,23 @@ async def webhook(Body: str = Form(...), From: str = Form(...)):
 
     if entrada.lower() in ("reporte", "reporte mensual", "reporte semanal"):
         periodo = "semanal" if "semanal" in entrada.lower() else "mensual"
-
-        async def _generar_bg():
-            try:
-                from src.reporte import generar_y_enviar_reporte
-                import os, functools
-                destinatarios = os.getenv("REPORT_RECIPIENTS", "")
-                print(f"[reporte] Iniciando generacion. Destinatarios: '{destinatarios}'")
-                loop = asyncio.get_event_loop()
-                resultado = await loop.run_in_executor(
-                    None, functools.partial(generar_y_enviar_reporte, periodo)
-                )
-                print(f"[reporte] Resultado: {resultado}")
-            except Exception as e:
-                import traceback
-                print(f"[reporte] Error en background: {e}")
-                print(traceback.format_exc())
-
-        asyncio.create_task(_generar_bg())
-        return _twiml(f"Generando reporte {periodo}... en unos segundos lo recibirás por email.")
+        try:
+            from src.reporte import generar_html
+            loop = asyncio.get_event_loop()
+            html_path = await loop.run_in_executor(
+                None,
+                functools.partial(
+                    generar_html, periodo,
+                    _datos["facturado"], _datos["pendiente"],
+                    _datos["facturas_mensual"], _datos["trabajos"],
+                ),
+            )
+            dominio = os.getenv("RAILWAY_PUBLIC_DOMAIN", "localhost:8000")
+            url = f"https://{dominio}/reportes/{html_path.name}"
+            registrar(numero, entrada, url)
+            return _twiml(f"Reporte {periodo} listo:\n{url}")
+        except Exception as e:
+            return _twiml(f"Error al generar el reporte: {e}")
 
     if entrada.lower() == "actualizar":
         try:

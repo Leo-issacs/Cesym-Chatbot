@@ -484,12 +484,20 @@ def _construir_datos_reporte(
     }
 
 
-def generar_html(periodo: str = "mensual") -> Path:
+def generar_html(
+    periodo: str = "mensual",
+    df_fac: pd.DataFrame = None,
+    df_pen: pd.DataFrame = None,
+    df_men: pd.DataFrame = None,
+    df_tra: pd.DataFrame = None,
+) -> Path:
     """
     Genera el reporte HTML con datos reales inyectados desde los Excels.
     Guarda el archivo en data/reportes/ y retorna su ruta.
+    Si se pasan DataFrames, los usa directamente (evita releer los Excel).
     """
-    df_fac, df_pen, df_men, df_tra = _cargar_datos()
+    if df_fac is None:
+        df_fac, df_pen, df_men, df_tra = _cargar_datos()
     datos = _construir_datos_reporte(df_fac, df_pen, df_men, df_tra, periodo)
 
     template = _HTML_TEMPLATE.read_text(encoding="utf-8")
