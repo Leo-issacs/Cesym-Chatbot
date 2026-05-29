@@ -237,3 +237,51 @@ def subir_excel(ruta_local: Path, folder_id: str) -> str:
         )
 
     return archivo["id"]
+
+
+def subir_archivo(ruta_local: Path, folder_id: str, mime_type: str = "text/plain") -> str:
+    """
+    Sube cualquier archivo (no solo Excel) a Drive.
+    Si ya existe con el mismo nombre, lo reemplaza.
+    Retorna el ID del archivo en Drive.
+    """
+    from googleapiclient.http import MediaFileUpload
+    servicio = autenticar()
+    nombre = ruta_local.name
+
+    query = f"'{folder_id}' in parents and name='{nombre}' and trashed=false"
+    existentes = servicio.files().list(q=query, fields="files(id)").execute().get("files", [])
+
+    media = MediaFileUpload(str(ruta_local), mimetype=mime_type, resumable=False)
+
+    if existentes:
+        archivo = servicio.files().update(fileId=existentes[0]["id"], media_body=media).execute()
+    else:
+        metadata = {"name": nombre, "parents": [folder_id]}
+        archivo = servicio.files().create(body=metadata, media_body=media, fields="id").execute()
+
+    return archivo["id"]
+
+
+def descargar_archivo_por_nombre(nombre: str, folder_id: str, destino: Path) -> bool:
+    """
+    Busca un archivo por nombre en la carpeta de Drive y lo descarga.
+    Retorna True si lo encontró y descargó, False si no existe.
+    """
+    servicio = autenticar()
+    query = f"'{folder_id}' in parents and name='{nombre}' and trashed=false"
+    archivos = servicio.files().list(q=query, fields="files(id)").execute().get("files", [])
+
+    if not archivos:
+        return False
+
+    request = servicio.files().get_media(fileId=archivos[0]["id"])
+    buffer = io.BytesIO()
+    downloader = MediaIoBaseDownload(buffer, request)
+    listo = False
+    while not listo:
+        _, listo = downloader.next_chunk()
+
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    destino.write_bytes(buffer.getvalue())
+    return True

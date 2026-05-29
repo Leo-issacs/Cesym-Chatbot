@@ -364,6 +364,14 @@ def _construir_datos_reporte(
     """Calcula todos los KPIs y datos de gráficas listos para inyectar en el HTML."""
     hoy = datetime.now()
 
+    # Filtrar últimos 7 días para reporte semanal
+    if periodo == "semanal":
+        hace_7 = pd.Timestamp.now() - pd.Timedelta(days=7)
+        if not df_men.empty and "fecha" in df_men.columns:
+            df_men = df_men[df_men["fecha"] >= hace_7].copy()
+        if not df_fac.empty and "fecha" in df_fac.columns:
+            df_fac = df_fac[df_fac["fecha"] >= hace_7].copy()
+
     # ── KPIs ─────────────────────────────────────────────────────
     total_facturado = _safe(df_fac["monto_actual"].sum()) if not df_fac.empty else 0.0
     total_cobrado   = _safe(df_men[df_men["fecha_pago"].notna()]["total"].sum()) if not df_men.empty else 0.0

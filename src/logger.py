@@ -37,6 +37,19 @@ def _podar(lineas: list[str]) -> list[str]:
     return resultado
 
 
+def _subir_log_a_drive() -> None:
+    """Sube el archivo de log a Drive. Falla silenciosamente."""
+    import os
+    folder_id = os.getenv("DRIVE_FOLDER_ID")
+    if not folder_id or not _LOG_PATH.exists():
+        return
+    try:
+        from src.drive import subir_archivo
+        subir_archivo(_LOG_PATH, folder_id, mime_type="text/plain")
+    except Exception:
+        pass
+
+
 def registrar(numero: str, consulta: str, respuesta: str) -> None:
     """Agrega una línea al log y poda entradas viejas. Falla silenciosamente."""
     try:
@@ -55,6 +68,9 @@ def registrar(numero: str, consulta: str, respuesta: str) -> None:
         lineas = _podar(lineas)
 
         _LOG_PATH.write_text("\n".join(lineas) + "\n", encoding="utf-8")
+
+        if len(lineas) % 20 == 0:
+            _subir_log_a_drive()
     except Exception:
         pass
 

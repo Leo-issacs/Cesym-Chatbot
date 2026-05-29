@@ -279,16 +279,61 @@ def _buscar(campo: str, valor: str, facturado: pd.DataFrame, pendiente: pd.DataF
         total = resultado["importe"].sum()
         return _formato_pendiente(resultado) + f"\n{'─'*52}\nSubtotal: ${total:,.2f}"
 
-    # Buscar por cliente en el reporte mensual
+    # Buscar por fecha (YYYY-MM o YYYY-MM-DD) en cartera y reporte mensual
+    if campo in ("fecha", "date"):
+        try:
+            lineas = []
+            if len(valor) == 7:
+                target = pd.Period(valor, freq="M")
+                if not facturado.empty:
+                    res = facturado[facturado["fecha"].dt.to_period("M") == target]
+                    if not res.empty:
+                        lineas.append(f"OC Facturadas ({len(res)}) — {valor}:")
+                        lineas.append(_formato_facturado(res))
+                        lineas.append(f"Subtotal: ${res['monto_actual'].sum():,.2f}\n")
+                if not facturas.empty:
+                    res = facturas[facturas["fecha"].dt.to_period("M") == target]
+                    if not res.empty:
+                        lineas.append(f"Reporte Mensual ({len(res)}) — {valor}:")
+                        lineas.append(_formato_facturas_mensual(res))
+                        lineas.append(f"Subtotal: ${res['total'].sum():,.2f}")
+            else:
+                fecha = pd.to_datetime(valor)
+                if not facturado.empty:
+                    res = facturado[facturado["fecha"].dt.date == fecha.date()]
+                    if not res.empty:
+                        lineas.append(f"OC Facturadas ({len(res)}):")
+                        lineas.append(_formato_facturado(res))
+                        lineas.append(f"Subtotal: ${res['monto_actual'].sum():,.2f}")
+            if not lineas:
+                return f"No se encontraron registros para la fecha '{valor}'."
+            return "\n".join(lineas)
+        except (ValueError, AttributeError):
+            return (
+                f"Fecha no reconocida: '{valor}'.\n"
+                "Usa YYYY-MM (ej: 2026-03) o YYYY-MM-DD (ej: 2026-03-15)."
+            )
+
+    # Buscar por cliente en reporte mensual y/o trabajos
     if campo in ("cliente", "client"):
-        if facturas.empty:
-            return "El reporte mensual de facturas no está cargado."
-        mask = facturas["cliente"].str.upper().str.contains(valor.upper(), na=False)
-        resultado = facturas[mask]
-        if resultado.empty:
-            return f"No se encontró ninguna factura para el cliente '{valor}'."
-        total = resultado["total"].sum()
-        return _formato_facturas_mensual(resultado) + f"\n{'─'*52}\nSubtotal: ${total:,.2f}  ({len(resultado)} facturas)"
+        lineas = []
+        if not facturas.empty:
+            mask = facturas["cliente"].str.upper().str.contains(valor.upper(), na=False)
+            res = facturas[mask]
+            if not res.empty:
+                lineas.append(f"Reporte Mensual ({len(res)} facturas):")
+                lineas.append(_formato_facturas_mensual(res))
+                lineas.append(f"Subtotal: ${res['total'].sum():,.2f}\n")
+        if not trabajos.empty:
+            mask = trabajos["cliente"].str.upper().str.contains(valor.upper(), na=False)
+            res = trabajos[mask]
+            if not res.empty:
+                lineas.append(f"Trabajos ({len(res)}):")
+                lineas.append(_formato_trabajos(res))
+                lineas.append(f"Subtotal cobrado: ${res['pagado'].sum():,.2f}")
+        if not lineas:
+            return f"No se encontró ningún registro para el cliente '{valor}'."
+        return "\n".join(lineas)
 
     # Buscar por técnico en trabajos
     if campo in ("tecnico", "técnico"):
@@ -528,7 +573,10 @@ def _ayuda() -> str:
   buscar factura [num]     → Por numero de factura
   buscar cot [num]         → Por cotizacion pendiente
   buscar suc [num]         → Pendientes de una sucursal
+  buscar cliente [nombre]  → Facturas y trabajos de un cliente
   buscar tecnico [nombre]  → Trabajos de un tecnico
+  buscar fecha [YYYY-MM]   → Registros de un mes (ej: 2026-03)
+  buscar fecha [YYYY-MM-DD]→ Registros de una fecha exacta
 
   TRABAJOS CASUALES
   ─────────────────

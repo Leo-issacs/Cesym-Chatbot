@@ -69,6 +69,14 @@ def _guardar():
         _SESIONES_PATH.write_text(json.dumps(_sesiones, ensure_ascii=False, indent=2), encoding="utf-8")
     except Exception:
         pass
+    import os
+    folder_id = os.getenv("DRIVE_FOLDER_ID")
+    if folder_id and _SESIONES_PATH.exists():
+        try:
+            from src.drive import subir_archivo
+            subir_archivo(_SESIONES_PATH, folder_id, mime_type="application/json")
+        except Exception:
+            pass
 
 
 _cargar()

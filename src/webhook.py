@@ -15,6 +15,7 @@ import asyncio
 import functools
 import os
 from contextlib import asynccontextmanager
+from datetime import datetime
 from difflib import get_close_matches
 from pathlib import Path
 
@@ -39,6 +40,7 @@ _datos: dict = {
 }
 _cliente_ia = None
 _traducir_fn = None
+_ultima_sync: datetime | None = None
 
 
 def _hay_datos() -> bool:
@@ -46,9 +48,11 @@ def _hay_datos() -> bool:
 
 
 def _recargar_datos() -> list[str]:
+    global _ultima_sync
     fac, pte, men, tra, adv = _cargar_datos()
     _datos.update({"facturado": fac, "pendiente": pte,
                    "facturas_mensual": men, "trabajos": tra})
+    _ultima_sync = datetime.now()
     return adv
 
 
@@ -85,6 +89,19 @@ async def lifespan(app: FastAPI):
         except Exception:
             pass  # Si falla, intenta cargar lo que haya en data/raw/
 
+    # Restaurar sesiones y logs desde Drive (persisten entre redeploys)
+    folder_id = os.getenv("DRIVE_FOLDER_ID")
+    if folder_id:
+        try:
+            from src.drive import descargar_archivo_por_nombre
+            import src.sesiones as _ses_mod
+            base = Path(__file__).parent.parent
+            if descargar_archivo_por_nombre("sesiones.json", folder_id, base / "data" / "sesiones.json"):
+                _ses_mod._cargar()
+            descargar_archivo_por_nombre("queries.log", folder_id, base / "data" / "logs" / "queries.log")
+        except Exception:
+            pass
+
     # Cargar datos si hay archivos disponibles (no crashear si no hay)
     try:
         _recargar_datos()
@@ -108,6 +125,13 @@ async def _sync_periodico(intervalo_horas: int):
         try:
             _sincronizar_drive()
             _recargar_datos()
+            folder_id = os.getenv("DRIVE_FOLDER_ID")
+            if folder_id:
+                try:
+                    from src.logger import _LOG_PATH, _subir_log_a_drive
+                    _subir_log_a_drive()
+                except Exception:
+                    pass
             print(f"[sync] Datos actualizados automáticamente desde Drive.")
         except Exception as e:
             print(f"[sync] Error al sincronizar: {e}")
@@ -331,7 +355,8 @@ async def webhook(Body: str = Form(...), From: str = Form(...)):
         try:
             descargados = _sincronizar_drive()
             _recargar_datos()
-            lineas = ["Datos actualizados desde Drive."]
+            ts = _ultima_sync.strftime("%d/%m/%Y %H:%M") if _ultima_sync else "ahora"
+            lineas = [f"Datos actualizados desde Drive ({ts})."]
             lineas += [f"  • {f}" for f in descargados]
             lineas.append(
                 f"Cargados: {len(_datos['facturado'])} facturas | "
