@@ -301,9 +301,15 @@ async def webhook(Body: str = Form(...), From: str = Form(...)):
         async def _generar_bg():
             try:
                 from src.reporte import generar_y_enviar_reporte
-                generar_y_enviar_reporte(periodo)
+                import os
+                destinatarios = os.getenv("REPORT_RECIPIENTS", "")
+                print(f"[reporte] Iniciando generacion. Destinatarios: '{destinatarios}'")
+                resultado = generar_y_enviar_reporte(periodo)
+                print(f"[reporte] Resultado: {resultado}")
             except Exception as e:
+                import traceback
                 print(f"[reporte] Error en background: {e}")
+                print(traceback.format_exc())
 
         asyncio.create_task(_generar_bg())
         return _twiml(f"Generando reporte {periodo}... en unos segundos lo recibirás por email.")
