@@ -539,4 +539,6 @@ def _ayuda() -> str:
   OTROS
   ─────
   errores | actualizar | ayuda
+  reporte          → Genera y envía PDF mensual por email
+  reporte semanal  → Genera y envía PDF semanal por email
 """.strip()

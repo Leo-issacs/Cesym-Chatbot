@@ -295,6 +295,16 @@ async def webhook(Body: str = Form(...), From: str = Form(...)):
             "No hay datos cargados. Escribe 'actualizar' para descargar los archivos desde Google Drive."
         )
 
+    if entrada.lower() in ("reporte", "reporte mensual", "reporte semanal"):
+        try:
+            from src.reporte import generar_y_enviar_reporte
+            periodo = "semanal" if "semanal" in entrada.lower() else "mensual"
+            resultado = generar_y_enviar_reporte(periodo)
+            registrar(numero, entrada, resultado)
+            return _twiml(resultado)
+        except Exception as e:
+            return _twiml(f"Error al generar el reporte: {e}")
+
     if entrada.lower() == "actualizar":
         try:
             descargados = _sincronizar_drive()

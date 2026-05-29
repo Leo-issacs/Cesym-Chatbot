@@ -18,7 +18,11 @@ ENV/
 data/raw/
 data/backups/
 data/processed/
+data/reportes/
 logs/
+
+# Archivos generados
+reporte_*.html
 
 # Excel reales
 *.xlsx
