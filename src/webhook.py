@@ -301,10 +301,13 @@ async def webhook(Body: str = Form(...), From: str = Form(...)):
         async def _generar_bg():
             try:
                 from src.reporte import generar_y_enviar_reporte
-                import os
+                import os, functools
                 destinatarios = os.getenv("REPORT_RECIPIENTS", "")
                 print(f"[reporte] Iniciando generacion. Destinatarios: '{destinatarios}'")
-                resultado = generar_y_enviar_reporte(periodo)
+                loop = asyncio.get_event_loop()
+                resultado = await loop.run_in_executor(
+                    None, functools.partial(generar_y_enviar_reporte, periodo)
+                )
                 print(f"[reporte] Resultado: {resultado}")
             except Exception as e:
                 import traceback
