@@ -296,14 +296,17 @@ async def webhook(Body: str = Form(...), From: str = Form(...)):
         )
 
     if entrada.lower() in ("reporte", "reporte mensual", "reporte semanal"):
-        try:
-            from src.reporte import generar_y_enviar_reporte
-            periodo = "semanal" if "semanal" in entrada.lower() else "mensual"
-            resultado = generar_y_enviar_reporte(periodo)
-            registrar(numero, entrada, resultado)
-            return _twiml(resultado)
-        except Exception as e:
-            return _twiml(f"Error al generar el reporte: {e}")
+        periodo = "semanal" if "semanal" in entrada.lower() else "mensual"
+
+        async def _generar_bg():
+            try:
+                from src.reporte import generar_y_enviar_reporte
+                generar_y_enviar_reporte(periodo)
+            except Exception as e:
+                print(f"[reporte] Error en background: {e}")
+
+        asyncio.create_task(_generar_bg())
+        return _twiml(f"Generando reporte {periodo}... en unos segundos lo recibirás por email.")
 
     if entrada.lower() == "actualizar":
         try:
