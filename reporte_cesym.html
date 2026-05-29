@@ -1,0 +1,1040 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Reporte Mensual Cesym — Mayo 2026</title>
+
+  <!-- Google Fonts: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    /* ══════════════════════════════════════════════════════════════
+       CSS VARIABLES — Paleta e identidad Cesym
+    ══════════════════════════════════════════════════════════════ */
+    :root {
+      /* Colores principales */
+      --c-primary:        #1B4F72;
+      --c-primary-dark:   #154360;
+      --c-primary-mid:    #2471A3;
+      --c-primary-light:  #D6EAF8;
+      --c-success:        #1E8449;
+      --c-success-light:  #D5F5E3;
+      --c-warning:        #D68910;
+      --c-warning-light:  #FDEBD0;
+      --c-danger:         #C0392B;
+      --c-danger-light:   #FADBD8;
+      --c-neutral:        #F2F3F4;
+      --c-neutral-mid:    #ECF0F1;
+      --c-gray:           #7F8C8D;
+      --c-gray-light:     #BDC3C7;
+      --c-text:           #2C3E50;
+      --c-text-muted:     #5D6D7E;
+      --c-white:          #FFFFFF;
+
+      /* Espaciado */
+      --spacing-xs:  4px;
+      --spacing-sm:  8px;
+      --spacing-md:  16px;
+      --spacing-lg:  24px;
+      --spacing-xl:  32px;
+      --spacing-xxl: 48px;
+
+      /* Tipografía */
+      --font:         'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      --fs-xs:        11px;
+      --fs-sm:        13px;
+      --fs-base:      15px;
+      --fs-md:        17px;
+      --fs-lg:        20px;
+      --fs-xl:        24px;
+      --fs-xxl:       30px;
+
+      /* Sombras */
+      --shadow-sm: 0 1px 3px rgba(0,0,0,.07), 0 1px 2px rgba(0,0,0,.04);
+      --shadow-md: 0 4px 14px rgba(0,0,0,.09), 0 2px 4px rgba(0,0,0,.05);
+      --shadow-lg: 0 8px 28px rgba(0,0,0,.12), 0 4px 8px rgba(0,0,0,.06);
+
+      /* Bordes */
+      --r-sm:  6px;
+      --r-md:  8px;
+      --r-lg:  12px;
+      --r-xl:  16px;
+      --r-full: 50%;
+    }
+
+    /* ══════════════════════════════════════════════════════════════
+       RESET & BASE
+    ══════════════════════════════════════════════════════════════ */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--font);
+      font-size: var(--fs-base);
+      color: var(--c-text);
+      background: var(--c-neutral);
+      line-height: 1.55;
+      min-width: 1024px;
+    }
+
+    /* ══════════════════════════════════════════════════════════════
+       HEADER
+    ══════════════════════════════════════════════════════════════ */
+    .header {
+      background: linear-gradient(135deg, #0D2B3E 0%, var(--c-primary) 55%, var(--c-primary-mid) 100%);
+      color: var(--c-white);
+      padding: var(--spacing-xl) var(--spacing-xxl);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Círculos decorativos en el header */
+    .header::before,
+    .header::after {
+      content: '';
+      position: absolute;
+      border-radius: var(--r-full);
+      background: rgba(255,255,255,.04);
+      pointer-events: none;
+    }
+    .header::before { width: 380px; height: 380px; top: -55%; right: -5%; }
+    .header::after  { width: 260px; height: 260px; bottom: -70%; left: 35%; }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-lg);
+      z-index: 1;
+    }
+
+    .logo-circle {
+      width: 58px;
+      height: 58px;
+      border-radius: var(--r-full);
+      background: rgba(255,255,255,.14);
+      border: 2px solid rgba(255,255,255,.28);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: var(--fs-md);
+      font-weight: 700;
+      letter-spacing: -.5px;
+      flex-shrink: 0;
+    }
+
+    .header-info h1  { font-size: var(--fs-xl); font-weight: 700; letter-spacing: -.5px; }
+    .header-info p   { font-size: var(--fs-sm); opacity: .7; margin-top: 3px; }
+
+    .header-right    { text-align: right; z-index: 1; }
+    .header-right .lbl  { font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .6px; opacity: .6; }
+    .header-right .date { font-size: var(--fs-lg); font-weight: 600; margin-top: 3px; }
+
+    /* ══════════════════════════════════════════════════════════════
+       MAIN CONTAINER
+    ══════════════════════════════════════════════════════════════ */
+    .main {
+      max-width: 1380px;
+      margin: 0 auto;
+      padding: var(--spacing-xl) var(--spacing-xxl);
+    }
+
+    /* Encabezado de sección */
+    .section-heading {
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-sm);
+      font-size: var(--fs-base);
+      font-weight: 600;
+      color: var(--c-primary);
+      margin-bottom: var(--spacing-md);
+    }
+    .section-heading::before {
+      content: '';
+      display: block;
+      width: 4px;
+      height: 20px;
+      background: var(--c-primary);
+      border-radius: 2px;
+    }
+
+    /* ══════════════════════════════════════════════════════════════
+       KPI CARDS
+    ══════════════════════════════════════════════════════════════ */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: var(--spacing-md);
+      margin-bottom: var(--spacing-xl);
+    }
+
+    @media (max-width: 1200px) {
+      .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    .kpi-card {
+      background: var(--c-white);
+      border-radius: var(--r-lg);
+      padding: var(--spacing-lg);
+      box-shadow: var(--shadow-md);
+      position: relative;
+      overflow: hidden;
+      transition: transform .2s ease, box-shadow .2s ease;
+    }
+    .kpi-card:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-lg);
+    }
+    /* Barra de color superior */
+    .kpi-card::before {
+      content: '';
+      position: absolute;
+      inset: 0 0 auto 0;
+      height: 4px;
+      background: var(--accent, var(--c-primary));
+    }
+    .kpi-card.dimmed { opacity: .55; }
+    .kpi-card.dimmed::before { background: var(--c-gray-light); }
+
+    .kpi-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: var(--spacing-md);
+    }
+
+    .kpi-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: var(--r-md);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--icon-bg);
+    }
+    .kpi-icon svg { width: 22px; height: 22px; }
+
+    .kpi-trend {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      font-size: var(--fs-xs);
+      font-weight: 600;
+      padding: 3px 9px;
+      border-radius: 20px;
+    }
+    .kpi-trend.up      { color: var(--c-success); background: var(--c-success-light); }
+    .kpi-trend.bad     { color: var(--c-danger);  background: var(--c-danger-light);  }
+    .kpi-trend.neutral { color: var(--c-gray);    background: var(--c-neutral-mid);   }
+
+    .kpi-value {
+      font-size: var(--fs-xxl);
+      font-weight: 700;
+      letter-spacing: -1.5px;
+      line-height: 1.1;
+    }
+    .kpi-label {
+      font-size: var(--fs-sm);
+      color: var(--c-text-muted);
+      margin-top: var(--spacing-xs);
+    }
+
+    /* ══════════════════════════════════════════════════════════════
+       CHART CARDS
+    ══════════════════════════════════════════════════════════════ */
+    .charts-row {
+      display: grid;
+      grid-template-columns: 1.45fr 1fr;
+      gap: var(--spacing-md);
+      margin-bottom: var(--spacing-md);
+    }
+
+    .card {
+      background: var(--c-white);
+      border-radius: var(--r-lg);
+      padding: var(--spacing-lg);
+      box-shadow: var(--shadow-md);
+    }
+
+    .card-title {
+      font-size: var(--fs-base);
+      font-weight: 600;
+      color: var(--c-text);
+      margin-bottom: var(--spacing-lg);
+    }
+    .card-title small {
+      font-size: var(--fs-xs);
+      font-weight: 400;
+      color: var(--c-text-muted);
+      margin-left: var(--spacing-sm);
+    }
+
+    /* Doughnut layout */
+    .doughnut-wrap {
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-xl);
+    }
+    .doughnut-canvas { flex-shrink: 0; width: 175px; height: 175px; }
+
+    .d-legend { flex: 1; }
+    .d-legend-item {
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-sm);
+      margin-bottom: 10px;
+      font-size: var(--fs-sm);
+    }
+    .d-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 3px;
+      flex-shrink: 0;
+    }
+    .d-name  { flex: 1; color: var(--c-text-muted); }
+    .d-pct   { font-weight: 600; color: var(--c-text); }
+
+    /* ══════════════════════════════════════════════════════════════
+       TABLA DE FACTURAS
+    ══════════════════════════════════════════════════════════════ */
+    .table-card {
+      background: var(--c-white);
+      border-radius: var(--r-lg);
+      box-shadow: var(--shadow-md);
+      overflow: hidden;
+      margin-bottom: var(--spacing-md);
+    }
+
+    .table-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: var(--spacing-lg);
+      border-bottom: 1px solid var(--c-neutral-mid);
+    }
+    .table-toolbar h2   { font-size: var(--fs-base); font-weight: 600; }
+    .table-toolbar p    { font-size: var(--fs-xs); color: var(--c-text-muted); margin-top: 2px; }
+
+    .search-wrap { position: relative; }
+    .search-wrap svg {
+      position: absolute;
+      left: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--c-gray);
+    }
+    .search-wrap input {
+      padding: var(--spacing-sm) var(--spacing-md) var(--spacing-sm) 34px;
+      border: 1px solid var(--c-gray-light);
+      border-radius: var(--r-md);
+      font-family: var(--font);
+      font-size: var(--fs-sm);
+      color: var(--c-text);
+      outline: none;
+      width: 220px;
+      transition: border-color .2s;
+    }
+    .search-wrap input:focus { border-color: var(--c-primary); }
+
+    /* Tabla */
+    table { width: 100%; border-collapse: collapse; }
+
+    thead th {
+      background: var(--c-primary);
+      color: var(--c-white);
+      padding: 10px var(--spacing-md);
+      text-align: left;
+      font-size: var(--fs-sm);
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    tbody tr {
+      border-bottom: 1px solid #F2F3F4;
+      transition: background .12s;
+    }
+    tbody tr:nth-child(even) { background: #FAFBFC; }
+    tbody tr:hover           { background: #EEF5FB; }
+
+    tbody td {
+      padding: 10px var(--spacing-md);
+      font-size: var(--fs-sm);
+    }
+
+    /* Indicador lateral de antigüedad */
+    tr.verde   { border-left: 3px solid var(--c-success); }
+    tr.amarillo{ border-left: 3px solid var(--c-warning); }
+    tr.rojo    { border-left: 3px solid var(--c-danger);  }
+
+    /* Badge de días */
+    .badge {
+      display: inline-block;
+      padding: 2px 9px;
+      border-radius: 20px;
+      font-size: var(--fs-xs);
+      font-weight: 600;
+    }
+    tr.verde    .badge { background: var(--c-success-light); color: var(--c-success); }
+    tr.amarillo .badge { background: var(--c-warning-light); color: #7D6608;          }
+    tr.rojo     .badge { background: var(--c-danger-light);  color: var(--c-danger);  }
+
+    .folio { font-weight: 600; color: var(--c-primary); }
+    .amount { font-variant-numeric: tabular-nums; }
+
+    /* Fila vacía */
+    .row-empty td {
+      text-align: center;
+      padding: var(--spacing-xxl) !important;
+      color: var(--c-gray);
+      font-style: italic;
+    }
+
+    /* ══════════════════════════════════════════════════════════════
+       PAGINACIÓN
+    ══════════════════════════════════════════════════════════════ */
+    .pagination {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: var(--spacing-md) var(--spacing-lg);
+      border-top: 1px solid var(--c-neutral-mid);
+      font-size: var(--fs-sm);
+      color: var(--c-text-muted);
+    }
+    .pg-btns { display: flex; gap: var(--spacing-xs); }
+
+    .pg-btn {
+      width: 32px;
+      height: 32px;
+      border: 1px solid var(--c-gray-light);
+      border-radius: var(--r-sm);
+      background: var(--c-white);
+      font-family: var(--font);
+      font-size: var(--fs-sm);
+      color: var(--c-text);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all .15s;
+    }
+    .pg-btn:hover:not(:disabled) { background: var(--c-primary); color: var(--c-white); border-color: var(--c-primary); }
+    .pg-btn.active                { background: var(--c-primary); color: var(--c-white); border-color: var(--c-primary); }
+    .pg-btn:disabled              { opacity: .35; cursor: not-allowed; }
+
+    /* ══════════════════════════════════════════════════════════════
+       ALERTAS
+    ══════════════════════════════════════════════════════════════ */
+    .alerts-card {
+      background: var(--c-white);
+      border-radius: var(--r-lg);
+      box-shadow: var(--shadow-md);
+      border-left: 4px solid var(--c-danger);
+      overflow: hidden;
+      margin-bottom: var(--spacing-md);
+    }
+    .alert-item {
+      display: flex;
+      align-items: flex-start;
+      gap: var(--spacing-sm);
+      padding: var(--spacing-sm) var(--spacing-lg);
+      font-size: var(--fs-sm);
+      color: var(--c-text);
+      border-bottom: 1px solid var(--c-neutral);
+    }
+    .alert-item:last-child { border-bottom: none; }
+    .alert-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: var(--r-full);
+      background: var(--c-danger);
+      margin-top: 5px;
+      flex-shrink: 0;
+    }
+
+    /* ══════════════════════════════════════════════════════════════
+       FOOTER
+    ══════════════════════════════════════════════════════════════ */
+    .footer {
+      background: var(--c-primary-dark);
+      color: rgba(255,255,255,.55);
+      text-align: center;
+      padding: var(--spacing-md) var(--spacing-lg);
+      font-size: var(--fs-xs);
+      letter-spacing: .3px;
+    }
+    .footer strong { color: rgba(255,255,255,.9); }
+  </style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════════════════
+     HEADER
+══════════════════════════════════════════════════════════════ -->
+<header class="header">
+  <div class="header-left">
+    <div class="logo-circle">CS</div>
+    <div class="header-info">
+      <h1>Reporte Mensual</h1>
+      <p>Cesym &mdash; Sistema de Gestión de Cartera</p>
+    </div>
+  </div>
+  <div class="header-right">
+    <div class="lbl">Generado el</div>
+    <div class="date" id="header-date">—</div>
+  </div>
+</header>
+
+<!-- ══════════════════════════════════════════════════════════════
+     MAIN
+══════════════════════════════════════════════════════════════ -->
+<main class="main">
+
+  <!-- ── KPI Cards ── -->
+  <div class="section-heading">Resumen Ejecutivo</div>
+  <div class="kpi-grid">
+
+    <!-- Total Facturado -->
+    <div class="kpi-card" style="--accent: var(--c-primary);">
+      <div class="kpi-top">
+        <div class="kpi-icon" style="--icon-bg: var(--c-primary-light);">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#1B4F72" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <line x1="16" y1="13" x2="8" y2="13"/>
+            <line x1="16" y1="17" x2="8" y2="17"/>
+            <line x1="10" y1="9" x2="8" y2="9"/>
+          </svg>
+        </div>
+        <div class="kpi-trend up">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="18 15 12 9 6 15"/></svg>
+          +12%
+        </div>
+      </div>
+      <div class="kpi-value" id="kv-facturado">—</div>
+      <div class="kpi-label">Total Facturado &mdash; OC activas</div>
+    </div>
+
+    <!-- Total Cobrado -->
+    <div class="kpi-card" style="--accent: var(--c-success);">
+      <div class="kpi-top">
+        <div class="kpi-icon" style="--icon-bg: var(--c-success-light);">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#1E8449" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="12" y1="8" x2="12" y2="12"/>
+            <line x1="12" y1="16" x2="12.01" y2="16"/>
+            <path d="M9.5 9.5a3.5 1.5 0 0 1 5 0 3.5 1.5 0 0 1-5 0"/>
+            <path d="M8.5 14.5h7"/>
+          </svg>
+        </div>
+        <div class="kpi-trend up">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="18 15 12 9 6 15"/></svg>
+          +8%
+        </div>
+      </div>
+      <div class="kpi-value" style="color: var(--c-success);" id="kv-cobrado">—</div>
+      <div class="kpi-label">Total Cobrado &mdash; reporte mensual</div>
+    </div>
+
+    <!-- Por Cobrar -->
+    <div class="kpi-card" style="--accent: var(--c-warning);">
+      <div class="kpi-top">
+        <div class="kpi-icon" style="--icon-bg: var(--c-warning-light);">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#D68910" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/>
+            <polyline points="12 6 12 12 16 14"/>
+          </svg>
+        </div>
+        <div class="kpi-trend bad">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="6 9 12 15 18 9"/></svg>
+          +5%
+        </div>
+      </div>
+      <div class="kpi-value" style="color: var(--c-warning);" id="kv-por-cobrar">—</div>
+      <div class="kpi-label">Por Cobrar &mdash; sin fecha de pago</div>
+    </div>
+
+    <!-- Trabajos (atenuado) -->
+    <div class="kpi-card dimmed" id="card-trabajos">
+      <div class="kpi-top">
+        <div class="kpi-icon" style="--icon-bg: var(--c-neutral-mid);">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#7F8C8D" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+          </svg>
+        </div>
+        <div class="kpi-trend neutral">&mdash; sin datos</div>
+      </div>
+      <div class="kpi-value" style="color: var(--c-gray);" id="kv-trabajos">—</div>
+      <div class="kpi-label">Trabajos Registrados</div>
+    </div>
+
+  </div><!-- /kpi-grid -->
+
+  <!-- ── Gráficas: barras + doughnut ── -->
+  <div class="section-heading">Análisis de Cartera</div>
+  <div class="charts-row">
+
+    <!-- Barras: Monto Facturado por Mes -->
+    <div class="card">
+      <div class="card-title">Monto Facturado por Mes <small>OC activas</small></div>
+      <div style="position:relative; height:240px;">
+        <canvas id="chartFacturado"></canvas>
+      </div>
+    </div>
+
+    <!-- Doughnut: Por Estado -->
+    <div class="card">
+      <div class="card-title">Distribución por Estado</div>
+      <div class="doughnut-wrap">
+        <div class="doughnut-canvas">
+          <canvas id="chartEstados"></canvas>
+        </div>
+        <div class="d-legend" id="legendEstados"></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Barras apiladas + línea: Cobradas vs Por Cobrar -->
+  <div class="card" style="margin-bottom: var(--spacing-md);">
+    <div class="card-title">Cobradas vs Por Cobrar por Mes <small>reporte mensual</small></div>
+    <div style="position:relative; height:285px;">
+      <canvas id="chartCobradas"></canvas>
+    </div>
+  </div>
+
+  <!-- ── Tabla de facturas ── -->
+  <div class="section-heading">Facturas sin Cobrar</div>
+  <div class="table-card">
+
+    <div class="table-toolbar">
+      <div>
+        <h2>Facturas más antiguas sin cobrar</h2>
+        <p id="tabla-summary">—</p>
+      </div>
+      <div class="search-wrap">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+        </svg>
+        <input id="searchInput" type="text" placeholder="Buscar por cliente…" oninput="filtrarTabla()" />
+      </div>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Folio</th>
+          <th>Cliente</th>
+          <th>Monto</th>
+          <th>Fecha Emisión</th>
+          <th>Días Vencidos</th>
+        </tr>
+      </thead>
+      <tbody id="tablaBody"></tbody>
+    </table>
+
+    <div class="pagination">
+      <span id="pgInfo"></span>
+      <div class="pg-btns" id="pgBtns"></div>
+    </div>
+
+  </div>
+
+  <!-- ── Alertas (renderizadas por JS) ── -->
+  <div class="section-heading">Alertas y Observaciones</div>
+  <div class="alerts-card" id="alertas-container"></div>
+
+</main>
+
+<!-- ══════════════════════════════════════════════════════════════
+     FOOTER
+══════════════════════════════════════════════════════════════ -->
+<footer class="footer">
+  Generado automáticamente por <strong>Cesym Chatbot</strong>
+  &nbsp;&bull;&nbsp; <span id="footer-date">—</span>
+  &nbsp;&bull;&nbsp; v1.0
+</footer>
+
+
+<!-- ══════════════════════════════════════════════════════════════
+     DATOS INYECTADOS POR PYTHON
+     Python reemplaza __CESYM_DATA_JSON__ con el JSON real.
+     Al abrir el HTML directamente se usan los datos de ejemplo.
+══════════════════════════════════════════════════════════════ -->
+<script id="cesym-data" type="application/json">
+__CESYM_DATA_JSON__
+</script>
+
+<!-- ══════════════════════════════════════════════════════════════
+     JAVASCRIPT
+══════════════════════════════════════════════════════════════ -->
+<script>
+/* ── Leer datos inyectados ──────────────────────────────────────── */
+const RD = JSON.parse(document.getElementById('cesym-data').textContent);
+
+/* ── Alias cortos para uso interno ─────────────────────────────── */
+const FACTURAS = RD.tabla_facturas;
+const HOY      = new Date(RD.meta.fecha_hoy_iso);
+const PER_PAGE = 10;
+
+/* ── Utilidades ────────────────────────────────────────────────── */
+function fmtPesos(n) {
+  return '$' + n.toLocaleString('es-MX');
+}
+
+// Formateador compacto para ejes de gráficas
+function fmtCorto(v) {
+  if (v >= 1_000_000) return '$' + (v / 1_000_000).toFixed(v % 1_000_000 === 0 ? 0 : 1) + 'M';
+  if (v >= 1_000)    return '$' + (v / 1_000).toFixed(0) + 'K';
+  return '$' + v;
+}
+
+function diasDesde(fechaStr) {
+  const [d, m, y] = fechaStr.split('/').map(Number);
+  const f = new Date(y, m - 1, d);
+  return Math.floor((HOY - f) / 86_400_000);
+}
+
+// verde < 90 | amarillo 90-180 | rojo > 180
+function claseAntig(dias) {
+  if (dias < 90)   return 'verde';
+  if (dias <= 180) return 'amarillo';
+  return 'rojo';
+}
+
+/* ── Actualizar DOM con datos reales ────────────────────────────── */
+function actualizarDOM() {
+  const k = RD.kpis;
+
+  // Header y footer
+  document.getElementById('header-date').textContent = RD.meta.fecha_generacion;
+  document.getElementById('footer-date').textContent  = RD.meta.fecha_generacion;
+  document.title = `Reporte ${RD.meta.periodo} Cesym — ${RD.meta.fecha_generacion}`;
+
+  // KPIs
+  document.getElementById('kv-facturado').textContent  = fmtPesos(k.total_facturado);
+  document.getElementById('kv-cobrado').textContent    = fmtPesos(k.total_cobrado);
+  document.getElementById('kv-por-cobrar').textContent = fmtPesos(k.por_cobrar);
+  document.getElementById('kv-trabajos').textContent   = k.trabajos;
+
+  // Card de trabajos: quitar dimmed si hay datos
+  if (k.trabajos > 0) {
+    document.getElementById('card-trabajos').classList.remove('dimmed');
+  }
+
+  // Resumen de tabla
+  const tm = RD.tabla_meta;
+  document.getElementById('tabla-summary').textContent =
+    `${tm.total_count} total · ${fmtPesos(tm.total_monto)} pendiente`;
+
+  // Alertas
+  const cont = document.getElementById('alertas-container');
+  if (RD.alertas.length === 0) {
+    cont.innerHTML = '<div class="alert-item"><span>Sin alertas en este período.</span></div>';
+  } else {
+    cont.innerHTML = RD.alertas.map(a =>
+      `<div class="alert-item"><div class="alert-dot"></div><span>${a}</span></div>`
+    ).join('');
+  }
+}
+
+/* ── Tabla y paginación ────────────────────────────────────────── */
+let pagina = 1;
+let filtrados = [...FACTURAS];
+
+function filtrarTabla() {
+  const q = document.getElementById('searchInput').value.trim().toUpperCase();
+  filtrados = FACTURAS.filter(f => f.cliente.includes(q));
+  pagina = 1;
+  renderTabla();
+}
+
+function renderTabla() {
+  const ini  = (pagina - 1) * PER_PAGE;
+  const fin  = ini + PER_PAGE;
+  const rows = filtrados.slice(ini, fin);
+  const tot  = filtrados.length;
+  const tbody = document.getElementById('tablaBody');
+
+  if (rows.length === 0) {
+    tbody.innerHTML = '<tr class="row-empty"><td colspan="5">No se encontraron facturas con ese cliente.</td></tr>';
+  } else {
+    tbody.innerHTML = rows.map(f => {
+      const dias  = diasDesde(f.fecha);
+      const clase = claseAntig(dias);
+      return `
+        <tr class="${clase}">
+          <td class="folio">${f.folio}</td>
+          <td>${f.cliente}</td>
+          <td class="amount">${fmtPesos(f.monto)}</td>
+          <td>${f.fecha}</td>
+          <td><span class="badge">${dias} días</span></td>
+        </tr>`;
+    }).join('');
+  }
+
+  // Info
+  const infoEl = document.getElementById('pgInfo');
+  infoEl.textContent = tot === 0
+    ? 'Sin resultados'
+    : `Mostrando ${ini + 1}–${Math.min(fin, tot)} de ${tot} registros`;
+
+  // Botones de paginación
+  const totalPags = Math.max(1, Math.ceil(tot / PER_PAGE));
+  const btns = document.getElementById('pgBtns');
+  btns.innerHTML = '';
+
+  const addBtn = (label, onClick, disabled = false, active = false) => {
+    const b = document.createElement('button');
+    b.className = 'pg-btn' + (active ? ' active' : '');
+    b.innerHTML = label;
+    b.disabled  = disabled;
+    b.onclick   = onClick;
+    btns.appendChild(b);
+  };
+
+  addBtn('&#8249;', () => { pagina--; renderTabla(); }, pagina === 1);
+  for (let p = 1; p <= totalPags; p++) {
+    addBtn(p, ((pg) => () => { pagina = pg; renderTabla(); })(p), false, p === pagina);
+  }
+  addBtn('&#8250;', () => { pagina++; renderTabla(); }, pagina >= totalPags);
+}
+
+/* ── Configuración global de Chart.js ─────────────────────────── */
+Chart.defaults.font.family = "'Inter', sans-serif";
+Chart.defaults.font.size   = 12;
+Chart.defaults.color       = '#5D6D7E';
+
+// Plugin de data labels para barras simples (sin frameworks externos)
+const dataLabelsPlugin = {
+  id: 'cesymLabels',
+  afterDatasetsDraw(chart, _, opts) {
+    if (opts.skip) return;
+    const { ctx } = chart;
+    chart.data.datasets.forEach((ds, di) => {
+      const meta = chart.getDatasetMeta(di);
+      if (meta.hidden || meta.type === 'line') return;
+      meta.data.forEach((el, i) => {
+        const v = ds.data[i];
+        if (!v) return;
+        ctx.save();
+        ctx.fillStyle  = '#1B4F72';
+        ctx.font       = '600 11px Inter, sans-serif';
+        ctx.textAlign  = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText(fmtCorto(v), el.x, el.y - 4);
+        ctx.restore();
+      });
+    });
+  }
+};
+
+/* ── Gráfica 1: Monto Facturado por Mes (barras) ───────────────── */
+new Chart(document.getElementById('chartFacturado'), {
+  type: 'bar',
+  plugins: [dataLabelsPlugin],
+  data: {
+    labels: RD.chart_facturado.labels,
+    datasets: [{
+      label: 'Monto Facturado',
+      data: RD.chart_facturado.data,
+      // Gradiente azul petróleo
+      backgroundColor: function(ctx) {
+        const chart = ctx.chart;
+        const { chartArea } = chart;
+        if (!chartArea) return '#1B4F72';
+        const g = chart.ctx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+        g.addColorStop(0, '#2471A3');
+        g.addColorStop(1, '#1B4F72');
+        return g;
+      },
+      borderRadius: 7,
+      borderSkipped: false,
+      barPercentage: 0.52,
+    }]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    layout: { padding: { top: 28 } },
+    plugins: {
+      legend: { display: false },
+      cesymLabels: {},   // activar el plugin
+      tooltip: {
+        backgroundColor: '#1B4F72',
+        titleColor: 'rgba(255,255,255,.65)',
+        bodyColor: '#fff',
+        bodyFont: { weight: '600', size: 14 },
+        padding: 12,
+        cornerRadius: 8,
+        callbacks: {
+          label: ctx => '  ' + fmtPesos(ctx.raw)
+        }
+      }
+    },
+    scales: {
+      x: {
+        grid:   { display: false },
+        border: { display: false },
+      },
+      y: {
+        grid:   { color: '#F0F0F0' },
+        border: { display: false },
+        beginAtZero: true,
+        ticks: { callback: v => fmtCorto(v) },
+      }
+    }
+  }
+});
+
+/* ── Gráfica 2: Distribución por Estado (Doughnut) ─────────────── */
+const estadosData = RD.chart_estados;
+
+new Chart(document.getElementById('chartEstados'), {
+  type: 'doughnut',
+  data: {
+    labels:   estadosData.map(e => e.label),
+    datasets: [{
+      data:            estadosData.map(e => e.pct),
+      backgroundColor: estadosData.map(e => e.color),
+      borderWidth:     3,
+      borderColor:     '#FFFFFF',
+      hoverOffset:     7,
+    }]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: true,
+    cutout: '70%',
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: '#1B4F72',
+        titleColor: 'rgba(255,255,255,.65)',
+        bodyColor: '#fff',
+        bodyFont: { weight: '600', size: 13 },
+        padding: 10,
+        cornerRadius: 8,
+        callbacks: {
+          label: ctx => `  ${ctx.label}: ${ctx.raw}%`
+        }
+      }
+    }
+  }
+});
+
+// Leyenda manual (más control visual que la nativa de Chart.js)
+document.getElementById('legendEstados').innerHTML =
+  estadosData.map(e => `
+    <div class="d-legend-item">
+      <div class="d-dot" style="background:${e.color};"></div>
+      <span class="d-name">${e.label}</span>
+      <span class="d-pct">${e.pct}%</span>
+    </div>`).join('');
+
+/* ── Gráfica 3: Cobradas vs Por Cobrar + línea Total ───────────── */
+const mesesLabels = RD.chart_cobradas.labels;
+const vCobradas   = RD.chart_cobradas.cobradas;
+const vPorCobrar  = RD.chart_cobradas.por_cobrar;
+const vTotales    = vCobradas.map((v, i) => v + vPorCobrar[i]);
+
+new Chart(document.getElementById('chartCobradas'), {
+  type: 'bar',
+  data: {
+    labels: mesesLabels,
+    datasets: [
+      {
+        label: 'Cobradas',
+        data: vCobradas,
+        backgroundColor: '#1E8449',
+        stack: 'cartera',
+        order: 2,
+        borderSkipped: false,
+        borderRadius: { topLeft: 0, topRight: 0, bottomLeft: 5, bottomRight: 5 },
+      },
+      {
+        label: 'Por Cobrar',
+        data: vPorCobrar,
+        backgroundColor: '#D68910',
+        stack: 'cartera',
+        order: 2,
+        borderSkipped: false,
+        borderRadius: { topLeft: 5, topRight: 5, bottomLeft: 0, bottomRight: 0 },
+      },
+      {
+        label: 'Total',
+        type: 'line',
+        data: vTotales,
+        borderColor: '#1B4F72',
+        backgroundColor: 'rgba(27,79,114,.07)',
+        borderWidth: 2.5,
+        pointRadius: 5,
+        pointBackgroundColor: '#1B4F72',
+        pointBorderColor: '#fff',
+        pointBorderWidth: 2,
+        tension: 0.38,
+        fill: false,
+        order: 1,
+      }
+    ]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      // Desactivar el plugin de labels en esta gráfica
+      cesymLabels: { skip: true },
+      legend: {
+        position: 'top',
+        align: 'end',
+        labels: {
+          usePointStyle: true,
+          pointStyle: 'rectRounded',
+          padding: 18,
+          font: { size: 12 },
+        }
+      },
+      tooltip: {
+        mode: 'index',
+        intersect: false,
+        backgroundColor: '#1B4F72',
+        titleColor: 'rgba(255,255,255,.7)',
+        bodyColor: '#fff',
+        padding: 12,
+        cornerRadius: 8,
+        callbacks: {
+          label: ctx => `  ${ctx.dataset.label}: ${fmtPesos(ctx.raw)}`
+        }
+      }
+    },
+    scales: {
+      x: {
+        stacked: true,
+        grid:   { display: false },
+        border: { display: false },
+      },
+      y: {
+        stacked: true,
+        grid:   { color: '#F0F0F0' },
+        border: { display: false },
+        beginAtZero: true,
+        ticks: { callback: v => fmtCorto(v) },
+      }
+    }
+  }
+});
+
+/* ── Inicializar ────────────────────────────────────────────────── */
+actualizarDOM();
+renderTabla();
+</script>
+
+</body>
+</html>
