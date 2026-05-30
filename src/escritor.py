@@ -33,8 +33,8 @@ def _hacer_backup(ruta_original: Path) -> Path:
         try:
             from src.drive import subir_excel
             subir_excel(destino, folder_id)
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[backup] Error al subir a Drive: {e}")
     return destino
 
 
