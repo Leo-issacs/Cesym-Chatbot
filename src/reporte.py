@@ -364,18 +364,27 @@ def _construir_datos_reporte(
     """Calcula todos los KPIs y datos de gráficas listos para inyectar en el HTML."""
     hoy = datetime.now()
 
-    # Filtrar últimos 7 días para reporte semanal
+    # Filtrar por periodo solo para KPIs — las gráficas usan el historial completo
+    df_fac_kpi = df_fac.copy()
+    df_men_kpi = df_men.copy()
+
     if periodo == "semanal":
         hace_7 = pd.Timestamp.now() - pd.Timedelta(days=7)
-        if not df_men.empty and "fecha" in df_men.columns:
-            df_men = df_men[df_men["fecha"] >= hace_7].copy()
-        if not df_fac.empty and "fecha" in df_fac.columns:
-            df_fac = df_fac[df_fac["fecha"] >= hace_7].copy()
+        if not df_men_kpi.empty and "fecha" in df_men_kpi.columns:
+            df_men_kpi = df_men_kpi[df_men_kpi["fecha"] >= hace_7]
+        if not df_fac_kpi.empty and "fecha" in df_fac_kpi.columns:
+            df_fac_kpi = df_fac_kpi[df_fac_kpi["fecha"] >= hace_7]
+    elif periodo == "mensual":
+        inicio_mes = pd.Timestamp(hoy.year, hoy.month, 1)
+        if not df_men_kpi.empty and "fecha" in df_men_kpi.columns:
+            df_men_kpi = df_men_kpi[df_men_kpi["fecha"] >= inicio_mes]
+        if not df_fac_kpi.empty and "fecha" in df_fac_kpi.columns:
+            df_fac_kpi = df_fac_kpi[df_fac_kpi["fecha"] >= inicio_mes]
 
-    # ── KPIs ─────────────────────────────────────────────────────
-    total_facturado = _safe(df_fac["monto_actual"].sum()) if not df_fac.empty else 0.0
-    total_cobrado   = _safe(df_men[df_men["fecha_pago"].notna()]["total"].sum()) if not df_men.empty else 0.0
-    por_cobrar      = _safe(df_men[df_men["fecha_pago"].isna()]["total"].sum()) if not df_men.empty else 0.0
+    # ── KPIs (datos del periodo seleccionado) ─────────────────────
+    total_facturado = _safe(df_fac_kpi["monto_actual"].sum()) if not df_fac_kpi.empty else 0.0
+    total_cobrado   = _safe(df_men_kpi[df_men_kpi["fecha_pago"].notna()]["total"].sum()) if not df_men_kpi.empty else 0.0
+    por_cobrar      = _safe(df_men_kpi[df_men_kpi["fecha_pago"].isna()]["total"].sum()) if not df_men_kpi.empty else 0.0
     total_trabajos  = len(df_tra)
     total_pen_oc    = _safe(df_pen["importe"].sum()) if not df_pen.empty else 0.0
 
