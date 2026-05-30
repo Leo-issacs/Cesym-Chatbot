@@ -344,6 +344,16 @@ async def webhook(Body: str = Form(...), From: str = Form(...)):
                     _datos["facturas_mensual"], _datos["trabajos"],
                 ),
             )
+            reports_folder_id = os.getenv("DRIVE_REPORTS_FOLDER_ID")
+            if reports_folder_id:
+                try:
+                    from src.drive import subir_archivo
+                    await loop.run_in_executor(
+                        None,
+                        functools.partial(subir_archivo, html_path, reports_folder_id, "text/html"),
+                    )
+                except Exception:
+                    pass
             dominio = os.getenv("RAILWAY_PUBLIC_DOMAIN", "localhost:8000")
             url = f"https://{dominio}/reportes/{html_path.name}"
             registrar(numero, entrada, url)

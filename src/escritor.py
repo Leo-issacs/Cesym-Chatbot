@@ -27,6 +27,14 @@ def _hacer_backup(ruta_original: Path) -> Path:
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     destino = DATA_BACKUPS_DIR / f"{ruta_original.stem}_{timestamp}{ruta_original.suffix}"
     shutil.copy2(ruta_original, destino)
+    import os
+    folder_id = os.getenv("DRIVE_BACKUPS_FOLDER_ID")
+    if folder_id:
+        try:
+            from src.drive import subir_excel
+            subir_excel(destino, folder_id)
+        except Exception:
+            pass
     return destino
 
 
