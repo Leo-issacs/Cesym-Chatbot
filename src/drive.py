@@ -4,17 +4,18 @@ drive.py
 Responsabilidad única: toda la comunicación con Google Drive.
 
 Qué hace:
-  - Autenticarse con OAuth 2.0 (abre el navegador la primera vez,
-    luego guarda el token en .credentials/token.json y no vuelve a pedir login).
+  - Autenticarse con Service Account (preferido, sin navegador) o con OAuth 2.0 como fallback.
   - Listar archivos Excel dentro de una carpeta de Drive.
   - Descargar archivos a data/raw/.
-  - (Futuro) Subir archivos modificados de vuelta a Drive.
+  - Subir archivos (logs, reportes, backups) de vuelta a Drive.
+
+Autenticación (en orden de prioridad):
+  1. Service Account: .credentials/service_account.json  ← para ejecución automática/headless
+  2. OAuth 2.0:       .credentials/credentials.json      ← requiere navegador la primera vez
 
 Configuración necesaria (en archivo .env):
   DRIVE_FOLDER_ID   → ID de la carpeta de Drive donde están los Excels.
-                       Se obtiene de la URL: drive.google.com/drive/folders/<ID>
-  GOOGLE_CREDENTIALS_PATH → Ruta al archivo credentials.json descargado de
-                             Google Cloud Console (por defecto: .credentials/credentials.json)
+  GOOGLE_CREDENTIALS_PATH → (Opcional) ruta al OAuth credentials.json.
 """
 
 import os
@@ -27,14 +28,13 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 
-# Solo se pide permiso de lectura/escritura de Drive (archivos creados por la app).
-# Si en el futuro se necesita acceso completo, cambiar a "drive".
 SCOPES = ["https://www.googleapis.com/auth/drive"]
 
 BASE_DIR = Path(__file__).parent.parent
 CREDENTIALS_DIR = BASE_DIR / ".credentials"
 TOKEN_PATH = CREDENTIALS_DIR / "token.json"
 DEFAULT_CREDENTIALS_PATH = CREDENTIALS_DIR / "credentials.json"
+SERVICE_ACCOUNT_PATH = CREDENTIALS_DIR / "service_account.json"
 DATA_RAW_DIR = BASE_DIR / "data" / "raw"
 
 
@@ -74,15 +74,21 @@ def _get_credentials_path() -> Path:
     return p if p.is_absolute() else BASE_DIR / p
 
 
-def autenticar():
+def _autenticar_service_account():
+    """Autentica con Service Account. No requiere navegador ni interacción humana."""
+    from google.oauth2 import service_account
+    creds = service_account.Credentials.from_service_account_file(
+        str(SERVICE_ACCOUNT_PATH),
+        scopes=SCOPES,
+    )
+    return build("drive", "v3", credentials=creds, cache_discovery=False)
+
+
+def _autenticar_oauth():
     """
-    Autentica con Google Drive usando OAuth 2.0.
-
-    - Si ya existe un token guardado y es válido, lo usa directamente.
-    - Si el token venció, lo refresca automáticamente.
-    - Si no hay token, abre el navegador para pedir permiso (solo la primera vez).
-
-    Retorna el servicio de Drive listo para usar.
+    Autentica con OAuth 2.0.
+    - Usa el token guardado si es válido o lo refresca.
+    - Si no hay token, abre el navegador (solo la primera vez).
     """
     CREDENTIALS_DIR.mkdir(exist_ok=True)
     creds = None
@@ -107,6 +113,16 @@ def autenticar():
         TOKEN_PATH.write_text(creds.to_json())
 
     return build("drive", "v3", credentials=creds)
+
+
+def autenticar():
+    """
+    Autentica con Google Drive.
+    Prioridad: Service Account (headless) → OAuth 2.0 (con navegador).
+    """
+    if SERVICE_ACCOUNT_PATH.exists():
+        return _autenticar_service_account()
+    return _autenticar_oauth()
 
 
 def listar_excels(folder_id: str) -> list[dict]:
