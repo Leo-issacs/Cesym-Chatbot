@@ -10,11 +10,17 @@ Qué hace:
   - Subir archivos (logs, reportes, backups) de vuelta a Drive.
 
 Autenticación (en orden de prioridad):
-  1. Service Account: .credentials/service_account.json  ← para ejecución automática/headless
-  2. OAuth 2.0:       .credentials/credentials.json      ← requiere navegador la primera vez
+  1. Service Account vía variable de entorno: GOOGLE_SERVICE_ACCOUNT_JSON
+     ← preferido en cloud (Railway): el JSON completo va en una variable, sin archivos.
+  2. Service Account vía archivo: .credentials/service_account.json
+     ← para ejecución local headless.
+  3. OAuth 2.0: .credentials/credentials.json
+     ← último recurso; requiere navegador la primera vez y su refresh token expira.
 
 Configuración necesaria (en archivo .env):
   DRIVE_FOLDER_ID   → ID de la carpeta de Drive donde están los Excels.
+  GOOGLE_SERVICE_ACCOUNT_JSON → (Recomendado en cloud) JSON completo de la
+                                Service Account. Ver .env.example.
   GOOGLE_CREDENTIALS_PATH → (Opcional) ruta al OAuth credentials.json.
 """
 
@@ -28,7 +34,14 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 
+# El bot ESCRIBE a Drive (sube backups, logs y reportes), por eso pedimos el
+# scope completo 'drive' y NO 'drive.readonly'.
 SCOPES = ["https://www.googleapis.com/auth/drive"]
+
+# Nombre EXACTO de la variable de entorno con el JSON completo de la Service Account.
+# En Railway se configura con el contenido íntegro del archivo .json de la cuenta
+# cesym-sync@cesym-hvac.iam.gserviceaccount.com.
+SERVICE_ACCOUNT_ENV = "GOOGLE_SERVICE_ACCOUNT_JSON"
 
 BASE_DIR = Path(__file__).parent.parent
 CREDENTIALS_DIR = BASE_DIR / ".credentials"
@@ -74,8 +87,51 @@ def _get_credentials_path() -> Path:
     return p if p.is_absolute() else BASE_DIR / p
 
 
+def _service_account_info_desde_env() -> dict | None:
+    """
+    Lee el JSON de la Service Account desde la variable de entorno
+    GOOGLE_SERVICE_ACCOUNT_JSON y lo parsea a dict.
+
+    Acepta dos formatos para tolerar cómo se pegue en Railway:
+      - JSON crudo (lo normal): se parsea con json.loads directamente.
+      - JSON en base64 (fallback): si json.loads falla, intenta decodificar base64
+        y luego parsear. Útil si el panel reescapa saltos de línea.
+
+    Retorna el dict de credenciales, o None si la variable no está definida.
+    Lanza ValueError si la variable existe pero no contiene un JSON válido.
+    """
+    import json
+
+    raw = os.getenv(SERVICE_ACCOUNT_ENV)
+    if not raw or not raw.strip():
+        return None
+
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        import base64
+        try:
+            decodificado = base64.b64decode(raw).decode("utf-8")
+            return json.loads(decodificado)
+        except Exception as e:
+            raise ValueError(
+                f"{SERVICE_ACCOUNT_ENV} está definida pero no es un JSON válido "
+                f"(ni crudo ni base64): {e}"
+            ) from e
+
+
+def _autenticar_service_account_desde_env(info: dict):
+    """Autentica con Service Account usando el dict de credenciales (sin archivo)."""
+    from google.oauth2 import service_account
+    creds = service_account.Credentials.from_service_account_info(
+        info,
+        scopes=SCOPES,
+    )
+    return build("drive", "v3", credentials=creds, cache_discovery=False)
+
+
 def _autenticar_service_account():
-    """Autentica con Service Account. No requiere navegador ni interacción humana."""
+    """Autentica con Service Account desde archivo. No requiere navegador ni interacción humana."""
     from google.oauth2 import service_account
     creds = service_account.Credentials.from_service_account_file(
         str(SERVICE_ACCOUNT_PATH),
@@ -118,8 +174,17 @@ def _autenticar_oauth():
 def autenticar():
     """
     Autentica con Google Drive.
-    Prioridad: Service Account (headless) → OAuth 2.0 (con navegador).
+
+    Prioridad:
+      1. Service Account desde variable de entorno (GOOGLE_SERVICE_ACCOUNT_JSON)
+         → preferido en cloud, no requiere archivos ni navegador, no expira.
+      2. Service Account desde archivo (.credentials/service_account.json)
+         → para ejecución local headless.
+      3. OAuth 2.0 → último recurso (refresh token que puede expirar).
     """
+    info = _service_account_info_desde_env()
+    if info is not None:
+        return _autenticar_service_account_desde_env(info)
     if SERVICE_ACCOUNT_PATH.exists():
         return _autenticar_service_account()
     return _autenticar_oauth()
