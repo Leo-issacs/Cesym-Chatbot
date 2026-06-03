@@ -20,7 +20,7 @@ from difflib import get_close_matches
 from pathlib import Path
 
 import pandas as pd
-from fastapi import FastAPI, Form, Response, HTTPException
+from fastapi import FastAPI, Form, Response, HTTPException, Request
 from fastapi.responses import FileResponse
 
 from src.cli import _cargar_dotenv, _cargar_datos, _sincronizar_drive
@@ -28,6 +28,7 @@ from src.query_engine import run_query
 from src.sesiones import tiene_sesion, iniciar, iniciar_editar, iniciar_borrar, procesar, cancelar
 from src.escritor import agregar_trabajo, editar_trabajo, borrar_trabajo
 from src.logger import registrar, leer_recientes
+from src.seguridad import verificar_peticion
 
 _LIMITE_WA = 1500  # limite por mensaje de WhatsApp via Twilio
 
@@ -281,7 +282,16 @@ async def servir_reporte(filename: str):
 
 
 @app.post("/webhook")
-async def webhook(Body: str = Form(...), From: str = Form(...)):
+async def webhook(request: Request, Body: str = Form(...), From: str = Form(...)):
+    # ── Seguridad (firma Twilio + whitelist) ──────────────────────────
+    # En modo log-only (por defecto) esto solo registra; bloquea únicamente
+    # si ENFORCE_TWILIO_SIGNATURE / ENFORCE_WHITELIST están activos.
+    form = await request.form()
+    params = {clave: str(valor) for clave, valor in form.items()}
+    bloqueo = verificar_peticion(request, params, From)
+    if bloqueo is not None:
+        return bloqueo
+
     entrada = Body.strip()
     numero = From  # ej: "whatsapp:+521234567890"
 
