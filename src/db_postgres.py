@@ -98,26 +98,37 @@ CREATE TABLE IF NOT EXISTS {SCHEMA}.sesiones_bot (
 
 # SQL para resetear las secuencias SERIAL después de insertar con IDs explícitos.
 # Necesario si el script de migración inserta con los mismos IDs del SQLite.
+#
+# Usa la forma de 3 argumentos: setval(seq, valor, is_called).
+#   - Tabla con datos: setval(seq, MAX(id), true)  → el próximo id será MAX(id)+1
+#   - Tabla vacía:     setval(seq, 1, false)        → el próximo id será 1
+# Esto evita el error "value 0 is out of bounds" en tablas vacías, donde
+# MAX(id) es NULL y un setval(seq, 0) fallaría (el mínimo de una secuencia es 1).
 RESET_SEQUENCES_SQL = f"""
 SELECT setval(
     pg_get_serial_sequence('{SCHEMA}.clientes', 'id'),
-    COALESCE((SELECT MAX(id) FROM {SCHEMA}.clientes), 0)
+    GREATEST(COALESCE((SELECT MAX(id) FROM {SCHEMA}.clientes), 1), 1),
+    (SELECT MAX(id) FROM {SCHEMA}.clientes) IS NOT NULL
 );
 SELECT setval(
     pg_get_serial_sequence('{SCHEMA}.tecnicos', 'id'),
-    COALESCE((SELECT MAX(id) FROM {SCHEMA}.tecnicos), 0)
+    GREATEST(COALESCE((SELECT MAX(id) FROM {SCHEMA}.tecnicos), 1), 1),
+    (SELECT MAX(id) FROM {SCHEMA}.tecnicos) IS NOT NULL
 );
 SELECT setval(
     pg_get_serial_sequence('{SCHEMA}.facturas', 'id'),
-    COALESCE((SELECT MAX(id) FROM {SCHEMA}.facturas), 0)
+    GREATEST(COALESCE((SELECT MAX(id) FROM {SCHEMA}.facturas), 1), 1),
+    (SELECT MAX(id) FROM {SCHEMA}.facturas) IS NOT NULL
 );
 SELECT setval(
     pg_get_serial_sequence('{SCHEMA}.ordenes_compra', 'id'),
-    COALESCE((SELECT MAX(id) FROM {SCHEMA}.ordenes_compra), 0)
+    GREATEST(COALESCE((SELECT MAX(id) FROM {SCHEMA}.ordenes_compra), 1), 1),
+    (SELECT MAX(id) FROM {SCHEMA}.ordenes_compra) IS NOT NULL
 );
 SELECT setval(
     pg_get_serial_sequence('{SCHEMA}.trabajos', 'id'),
-    COALESCE((SELECT MAX(id) FROM {SCHEMA}.trabajos), 0)
+    GREATEST(COALESCE((SELECT MAX(id) FROM {SCHEMA}.trabajos), 1), 1),
+    (SELECT MAX(id) FROM {SCHEMA}.trabajos) IS NOT NULL
 );
 """
 
