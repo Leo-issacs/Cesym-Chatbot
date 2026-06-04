@@ -317,16 +317,33 @@ def _buscar(campo: str, valor: str, facturado: pd.DataFrame, pendiente: pd.DataF
     # Buscar por cliente en reporte mensual y/o trabajos
     if campo in ("cliente", "client"):
         lineas = []
+        q = valor.upper()
+
+        def _mask_cliente(col: pd.Series) -> pd.Series:
+            """
+            Búsqueda de cliente en dos pasos:
+            1. Substring case-insensitive (comportamiento original).
+            2. Fuzzy fallback con difflib si el paso 1 no encontró nada.
+               Necesario porque el ETL normalizó nombres con fuzzy matching
+               ("TEC Y DISEÑOS" → "TEC Y DISEÑO"), y el usuario puede escribir
+               la variante cruda del Excel que ya no existe en la BD.
+            """
+            from difflib import get_close_matches
+            mask = col.str.upper().str.contains(q, na=False)
+            if mask.any():
+                return mask
+            unicos = [c for c in col.str.upper().dropna().unique() if c]
+            cercanos = get_close_matches(q, unicos, n=5, cutoff=0.75)
+            return col.str.upper().isin(cercanos)
+
         if not facturas.empty:
-            mask = facturas["cliente"].str.upper().str.contains(valor.upper(), na=False)
-            res = facturas[mask]
+            res = facturas[_mask_cliente(facturas["cliente"])]
             if not res.empty:
                 lineas.append(f"Reporte Mensual ({len(res)} facturas):")
                 lineas.append(_formato_facturas_mensual(res))
                 lineas.append(f"Subtotal: ${res['total'].sum():,.2f}\n")
         if not trabajos.empty:
-            mask = trabajos["cliente"].str.upper().str.contains(valor.upper(), na=False)
-            res = trabajos[mask]
+            res = trabajos[_mask_cliente(trabajos["cliente"])]
             if not res.empty:
                 lineas.append(f"Trabajos ({len(res)}):")
                 lineas.append(_formato_trabajos(res))
