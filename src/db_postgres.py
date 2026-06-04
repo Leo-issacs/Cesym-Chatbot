@@ -144,9 +144,18 @@ def get_engine(url: str | None = None):
     """
     Motor SQLAlchemy para operaciones de runtime (lectura/escritura del bot).
 
-    Acepta el pooler de Supabase (puerto 6543) o la URL directa de Railway.
-    pool_pre_ping=True: verifica la conexión antes de cada operación (evita
-    errores silenciosos cuando el pooler cierra conexiones inactivas).
+    DATABASE_URL debe apuntar al POOLER de Supabase (puerto 6543) en producción:
+      postgresql://postgres.<ref>:<pass>@aws-0-<region>.pooler.supabase.com:6543/postgres
+
+    Configuración para Transaction Pooler (PgBouncer en modo transaction):
+      prepare_threshold=None  → deshabilita prepared statements en psycopg2.
+        El Transaction Pooler de Supabase no mantiene estado de sesión entre
+        llamadas, por lo que los prepared statements del lado del servidor fallan.
+        Con este flag, psycopg2 envía siempre SQL plano sin PREPARE.
+      pool_pre_ping=True → valida la conexión antes de cada uso; imprescindible
+        cuando el pooler cierra conexiones inactivas sin avisar.
+      pool_size / max_overflow conservadores → el pooler ya gestiona el pool
+        real; tener muchas conexiones aquí multiplica las del lado del pooler.
     """
     raw_url = url or os.environ.get("DATABASE_URL", "")
     if not raw_url:
@@ -154,7 +163,13 @@ def get_engine(url: str | None = None):
             "DATABASE_URL no está definida. "
             "Agrégala al .env (desarrollo) o a las variables de Railway (producción)."
         )
-    return create_engine(_normalizar_url(raw_url), pool_pre_ping=True)
+    return create_engine(
+        _normalizar_url(raw_url),
+        pool_pre_ping=True,
+        pool_size=3,
+        max_overflow=2,
+        connect_args={"prepare_threshold": None},
+    )
 
 
 def get_migration_engine():
