@@ -1,0 +1,36 @@
+# requirements.in — dependencias DIRECTAS y su intención (rangos).
+#
+# Este archivo documenta QUÉ dependencias usa el proyecto y con qué rango de
+# versiones son compatibles. NO se instala directamente en Railway.
+#
+# El despliegue usa requirements.txt, que está pineado con == a las versiones
+# exactas que hoy funcionan en producción (builds reproducibles). Cuando quieras
+# actualizar, sube los rangos aquí, recompila e instala, prueba, y vuelve a
+# pinear requirements.txt.
+
+# ── Runtime (lo que arranca Railway: uvicorn src.webhook:app) ──────────────────
+pandas>=3.0.0
+openpyxl>=3.1.5
+sqlalchemy>=2.0.0
+psycopg2-binary>=2.9.0
+google-api-python-client>=2.100.0
+google-auth-httplib2>=0.2.0
+google-auth-oauthlib>=1.1.0
+anthropic>=0.40.0
+fastapi>=0.100.0
+uvicorn[standard]>=0.20.0
+twilio>=9.0.0
+python-multipart>=0.0.9
+matplotlib>=3.7.0
+reportlab>=4.0.0
+scikit-learn>=1.3.0
+
+# ── Test ───────────────────────────────────────────────────────────────────────
+pytest>=8.0.0
+
+# ── Solo ETL local (scripts/cargar_bd.py) — NO se usa en el runtime de Railway ──
+# El runtime hace fuzzy matching con difflib (stdlib). Estas libs solo se
+# necesitan para la carga/normalización de datos que se corre en local, por eso
+# NO van en requirements.txt. Instálalas a mano cuando vayas a correr el ETL.
+fuzzywuzzy>=0.18.0
+python-Levenshtein>=0.12.0
