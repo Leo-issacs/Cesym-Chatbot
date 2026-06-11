@@ -55,7 +55,20 @@ def _iniciar_cliente_ia():
 
 
 def _cargar_datos() -> tuple:
-    """Carga y limpia todos los datos. Retorna (facturado, pendiente, facturas_mensual, advertencias)."""
+    """
+    Carga y limpia todos los datos.
+    Retorna (facturado, pendiente, facturas_mensual, trabajos, advertencias).
+
+    USE_POSTGRES_READS=1 → lee desde las tablas de PostgreSQL (schema chatbot).
+    USE_POSTGRES_READS=0 → comportamiento original: lee desde archivos Excel (default).
+    """
+    if os.getenv("USE_POSTGRES_READS", "0") == "1":
+        try:
+            from src.datos_postgres import cargar_datos_desde_postgres
+            return cargar_datos_desde_postgres()
+        except Exception as e:
+            print(f"[datos_postgres] Error leyendo de Postgres, usando Excel como fallback: {e}")
+
     raw_facturado = load_facturado()
     raw_pendiente = load_pendiente()
     facturado, adv_fac = clean_facturado(raw_facturado)

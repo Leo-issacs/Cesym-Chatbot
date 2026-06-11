@@ -8,10 +8,15 @@ El estado se persiste en data/sesiones.json para sobrevivir reinicios del servid
 """
 
 import json
+import os
 from difflib import get_close_matches
 from pathlib import Path
 
 _SESIONES_PATH = Path(__file__).parent.parent / "data" / "sesiones.json"
+
+# USE_POSTGRES_SESSIONS=1 → usa chatbot.sesiones_bot en Postgres (ver sesiones_pg.py).
+# Mantener en "0" (o no definida) hasta completar la migración a Postgres.
+_USE_POSTGRES = os.getenv("USE_POSTGRES_SESSIONS", "0") == "1"
 
 _sesiones: dict = {}
 
@@ -56,6 +61,13 @@ def _normalizar_mes(texto: str) -> str | None:
 
 def _cargar():
     global _sesiones
+    if _USE_POSTGRES:
+        try:
+            from src import sesiones_pg
+            _sesiones = sesiones_pg.cargar_todas()
+            return
+        except Exception as e:
+            print(f"[sesiones] Postgres no disponible, usando archivo: {e}")
     try:
         if _SESIONES_PATH.exists():
             _sesiones = json.loads(_SESIONES_PATH.read_text(encoding="utf-8"))
@@ -64,6 +76,13 @@ def _cargar():
 
 
 def _guardar():
+    if _USE_POSTGRES:
+        try:
+            from src import sesiones_pg
+            sesiones_pg.guardar_todas(_sesiones)
+            return
+        except Exception as e:
+            print(f"[sesiones] Postgres no disponible, guardando en archivo: {e}")
     try:
         _SESIONES_PATH.parent.mkdir(parents=True, exist_ok=True)
         _SESIONES_PATH.write_text(json.dumps(_sesiones, ensure_ascii=False, indent=2), encoding="utf-8")
