@@ -15,11 +15,13 @@ El flujo de datos es **asimétrico**:
 - La **escritura** tiene una sola ruta: el bot escribe a **Excel → Drive**. No
   existe ningún camino de escritura del bot hacia Postgres en runtime.
 - La única forma de poblar/refrescar Postgres es un **pipeline offline**
-  (`cargar_bd.py` → `migrar_sqlite_a_postgres.py`) que hoy está **roto**.
+  (`cargar_bd.py` → `migrar_sqlite_a_postgres.py`). Funciona, pero requiere las
+  deps de ETL (`requirements-etl.txt`) y correrse a mano.
 
 Consecuencia: si algún día se activa `USE_POSTGRES_READS=1`, los trabajos que el
-bot agregue (que van a Excel) **no aparecerán** en Postgres hasta correr un ETL
-manual que, además, actualmente no funciona.
+bot agregue (que van a Excel) **no aparecerán** en Postgres hasta correr ese ETL
+manual. La asimetría sigue (el bot escribe a Excel, no a Postgres); lo que se
+arregló es que el ETL de refresco vuelve a funcionar.
 
 ```
                     ┌──────────────────────────────────────┐
@@ -33,7 +35,7 @@ manual que, además, actualmente no funciona.
    (única ruta)     (NO hay camino a Postgres)
 
    REFRESCO PG      Excel ──► cargar_bd.py ──► SQLite ──► migrar_sqlite_a_postgres.py ──► Postgres
-   (offline, ROTO)            └─ ✗ fuzzywuzzy no instalada ─┘
+   (offline, manual)          └─ requiere requirements-etl.txt (fuzzywuzzy) ─┘
 ```
 
 ---
@@ -126,9 +128,9 @@ desde la perspectiva del bot. Se puebla exclusivamente por el pipeline offline.
 
 ---
 
-## 3. REFRESCO DE POSTGRES (pipeline offline) — y por qué está ROTO
+## 3. REFRESCO DE POSTGRES (pipeline offline)
 
-Para que el modo `USE_POSTGRES_READS=1` tenga datos al día, hay que correr a mano:
+Para que el modo `USE_POSTGRES_READS=1` tenga datos al día, se corre a mano:
 
 ```
 Excel (data/raw/)
@@ -140,56 +142,52 @@ SQLite (data/cesym.db)
 PostgreSQL (schema chatbot)
 ```
 
-### 3.1 El hallazgo de PR-01: la cadena está rota
+### 3.1 Historia: el hallazgo de PR-01 (ya resuelto)
 
-**`scripts/cargar_bd.py` no puede ni importarse.** En `cargar_bd.py:46`:
+Originalmente la cadena estaba **rota**: `cargar_bd.py:46` hace
+`from fuzzywuzzy import fuzz, process` a nivel de módulo, y `fuzzywuzzy` no estaba
+instalada (en el pin de dependencias se movió, junto con `python-Levenshtein`,
+fuera de `requirements.txt` porque el runtime no las necesita —
+`query_engine.py` hace su fuzzy matching con `difflib` de la stdlib). El
+`ModuleNotFoundError` abortaba `cargar_bd.py` antes de hacer nada, dejando sin
+forma de regenerar `data/cesym.db`.
 
-```python
-from fuzzywuzzy import fuzz, process
-```
+**Arreglo (este PR):**
 
-es un import a nivel de módulo, y **`fuzzywuzzy` no está instalada** (ni ella ni
-`python-Levenshtein`). En el trabajo de pin de dependencias se confirmó que esas
-libs no estaban en el venv y se movieron a `requirements.in` como **deps solo-ETL**
-(fuera de `requirements.txt`), porque el runtime no las necesita —
-`query_engine.py` hace su fuzzy matching con `difflib` de la stdlib.
-
-Efecto en cadena:
-
-- `cargar_bd.py` aborta con `ModuleNotFoundError` antes de hacer nada.
-- Sin `cargar_bd.py`, no hay forma de **regenerar `data/cesym.db`** desde los Excel.
-- `migrar_sqlite_a_postgres.py` lee precisamente de `data/cesym.db`. Puede correr,
-  pero solo migraría datos viejos/stale (o nada si el `.db` no existe).
-
-**Conclusión:** la **única vía de refrescar Postgres a partir de los Excel actuales
-no funciona**. Postgres solo podría contener lo que se haya cargado en el pasado,
-cuando `fuzzywuzzy` sí estaba disponible en alguna máquina.
+- Las deps de ETL se declaran y pinean en **`requirements-etl.txt`**
+  (`fuzzywuzzy==0.18.0`, `python-Levenshtein==0.27.3`), instalables con
+  `pip install -r requirements-etl.txt`.
+- `cargar_bd.py` envuelve el import en un guard: si `fuzzywuzzy` falta, sale con un
+  mensaje accionable (apunta a `requirements-etl.txt`) en vez de un traceback crudo.
+- Verificado end-to-end: `cargar_bd.py --limpiar` reconstruye `data/cesym.db` desde
+  los Excel (fuzzy matching activo, p.ej. `"TEC Y DISEÑOS" → "TEC Y DISEÑO"`), y la
+  migración lee ese `.db`. Al verificar, Postgres ya estaba sincronizado con el
+  SQLite (mismos conteos), así que `migrar_sqlite_a_postgres.py` sería un no-op.
 
 ### 3.2 Por qué esto importa para la migración
 
 El modo Postgres (`USE_POSTGRES_READS=1`) se diseñó como el futuro "fuente de
-verdad". Pero hoy:
+verdad". Consideraciones que siguen vigentes:
 
-- Activarlo serviría datos potencialmente desactualizados (no hay refresco).
+- El refresco es **manual**: hay que correr el ETL tras cambiar los Excel.
+- `migrar_sqlite_a_postgres.py` usa `ON CONFLICT DO NOTHING`: **inserta** filas
+  nuevas pero **no actualiza** las existentes. Un cambio de un valor en una factura
+  ya migrada no se reflejaría con solo re-correr la migración (limitación conocida).
 - Cualquier trabajo que el bot agregue va a **Excel**, no a Postgres → divergencia
-  inmediata entre lo que el bot escribe y lo que leería en modo Postgres.
+  con lo que se leería en modo Postgres hasta el siguiente ETL.
 
-Por eso los flags están en `0`: la migración está **incompleta y bloqueada** por
-este ETL roto, no solo "apagada por precaución".
+Por eso los flags siguen en `0`: la cadena de refresco ya funciona, pero la
+migración como "fuente de verdad" aún no es de cero-toque.
 
-### 3.3 Qué haría falta para desbloquearlo (no ejecutado aquí)
+### 3.3 Cómo refrescar Postgres hoy
 
-1. Instalar las deps de ETL en la máquina local:
-   `pip install fuzzywuzzy python-Levenshtein` (declaradas en `requirements.in`).
-2. Correr `python -X utf8 scripts/cargar_bd.py --limpiar` para reconstruir
-   `data/cesym.db` desde los Excel.
-3. Correr `python -X utf8 scripts/migrar_sqlite_a_postgres.py` para migrar a Postgres.
-4. Recién entonces tendría sentido evaluar `USE_POSTGRES_READS=1`.
+1. `pip install -r requirements-etl.txt` (una vez por máquina).
+2. `python -X utf8 scripts/cargar_bd.py --limpiar` — reconstruye `data/cesym.db`.
+3. `python -X utf8 scripts/migrar_sqlite_a_postgres.py` — migra a Postgres
+   (requiere `DATABASE_URL`/`DATABASE_MIGRATION_URL`).
+4. Recién entonces tiene sentido evaluar `USE_POSTGRES_READS=1`.
 5. Pendiente de diseño aparte: una ruta de escritura bot→Postgres, o un job que
    reejecute el ETL tras cada cambio en Excel, para cerrar la asimetría de la §2.2.
-
-> Esto está documentado como pendiente; **no se corrigió ni se ejecutó** nada de
-> esto en este trabajo de documentación.
 
 ---
 
@@ -210,8 +208,8 @@ La lista completa de divergencias código↔docs está en
 [ARCHITECTURE.md → Deuda documentada](./ARCHITECTURE.md#deuda-documentada).
 Las directamente relevantes al flujo de datos:
 
-- **El refresco de Postgres está roto** (`cargar_bd.py` importa `fuzzywuzzy`
-  ausente) — desarrollado en la §3.1 de este documento.
+- ~~**El refresco de Postgres está roto** (`cargar_bd.py` importa `fuzzywuzzy`
+  ausente)~~ — **RESUELTO**: deps en `requirements-etl.txt` + guard de import; ver §3.1.
 - **Asimetría lectura/escritura**: el bot lee de Excel *o* Postgres pero solo
   escribe a Excel; no hay camino de escritura bot→Postgres (§2.2).
 - **El contrato de columnas se mantiene a mano** en dos lugares (`cleaner.py` y
