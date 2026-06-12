@@ -1,147 +1,155 @@
 """
 test_cleaner.py
 ---------------
-Pruebas de limpieza y normalización de datos.
+Pruebas de la LÓGICA de limpieza/normalización (src/cleaner.py) contra datos
+SINTÉTICOS (tests/fixtures/). No dependen del contenido del Excel del mes; los
+asserts validan transformaciones concretas (ej. "TOYODA  " → "TOYODA",
+des-inversión de fechas ISO), no conteos de datos reales.
 
-Valida:
-  - Que clean_facturado() y clean_pendiente() devuelven la estructura esperada.
-  - Que las filas de totales quedan excluidas.
-  - Que los tipos de datos son correctos (Int64, float, datetime).
-  - Que la conversión de fechas de Excel funciona.
-  - Que el DataFrame limpio tiene menos filas que el RAW (totales excluidos).
-  - Que no quedan valores no-numéricos en columnas clave.
+Los chequeos sobre datos reales viven en scripts/data_quality.py.
 """
 
 import pandas as pd
 import pytest
 
-from src.loader import load_facturado, load_pendiente
-from src.cleaner import clean_facturado, clean_pendiente
-
+from src.cleaner import (
+    clean_facturado,
+    clean_pendiente,
+    clean_facturas_mensual,
+    clean_trabajos,
+)
 
 COLUMNAS_FACTURADO = ["factura", "oc", "monto_actual", "prioridad", "fecha", "estado"]
 COLUMNAS_PENDIENTE = ["cot", "suc", "importe", "concepto"]
+COLUMNAS_MENSUAL = ["folio", "cliente", "fecha", "concepto", "total", "fecha_pago"]
+COLUMNAS_TRABAJOS = ["mes", "tecnico", "cliente", "rep_num", "domicilio",
+                     "telefono", "tipo_trabajo", "pagado", "recibe"]
 
 
 class TestCleanFacturado:
-    def test_retorna_tuple(self, raw_facturado):
-        resultado = clean_facturado(raw_facturado)
-        assert isinstance(resultado, tuple) and len(resultado) == 2
-
-    def test_retorna_dataframe_y_lista(self, raw_facturado):
+    def test_retorna_df_y_lista(self, raw_facturado):
         df, warns = clean_facturado(raw_facturado)
-        assert isinstance(df, pd.DataFrame)
-        assert isinstance(warns, list)
+        assert isinstance(df, pd.DataFrame) and isinstance(warns, list)
 
     def test_columnas_correctas(self, facturado):
-        assert list(facturado.columns) == COLUMNAS_FACTURADO, (
-            f"Columnas inesperadas: {list(facturado.columns)}"
-        )
+        assert list(facturado.columns) == COLUMNAS_FACTURADO
 
-    def test_no_esta_vacio(self, facturado):
-        assert len(facturado) > 0, "El DataFrame limpio está vacío"
+    def test_descarta_filas_de_totales(self, facturado):
+        """Las filas 'TOTAL'/'OC FACTURADO' (factura no numérica) se eliminan."""
+        # En el fixture hay 6 facturas válidas + 2 filas de totales.
+        assert len(facturado) == 6
+        assert not facturado["factura"].astype(str).str.contains("TOTAL").any()
 
-    def test_filas_totales_excluidas(self, raw_facturado, facturado):
-        """Debe haber menos filas limpias que RAW (se eliminan totales y encabezados)."""
-        assert len(facturado) < len(raw_facturado), (
-            "El limpiador no eliminó filas de totales o encabezados"
-        )
+    def test_factura_es_entero_sin_nulos(self, facturado):
+        assert pd.api.types.is_integer_dtype(facturado["factura"])
+        assert facturado["factura"].isna().sum() == 0
 
-    def test_factura_sin_nulos(self, facturado):
-        nulos = facturado["factura"].isna().sum()
-        assert nulos == 0, f"Hay {nulos} valores nulos en la columna 'factura'"
+    def test_monto_float_y_fecha_datetime(self, facturado):
+        assert pd.api.types.is_float_dtype(facturado["monto_actual"])
+        assert pd.api.types.is_datetime64_any_dtype(facturado["fecha"])
 
-    def test_factura_es_numerico(self, facturado):
-        assert pd.api.types.is_integer_dtype(facturado["factura"]), (
-            f"Tipo inesperado en 'factura': {facturado['factura'].dtype}"
-        )
+    def test_conserva_facturas_duplicadas(self, facturado):
+        """clean_facturado NO deduplica: la 8002 repetida debe seguir 2 veces."""
+        assert (facturado["factura"] == 8002).sum() == 2
 
-    def test_monto_es_float(self, facturado):
-        assert pd.api.types.is_float_dtype(facturado["monto_actual"]), (
-            f"Tipo inesperado en 'monto_actual': {facturado['monto_actual'].dtype}"
-        )
+    def test_advierte_monto_invalido_sin_oc_y_sin_fecha(self, advertencias_facturado):
+        texto = " | ".join(advertencias_facturado)
+        assert "monto inválido" in texto      # factura 8004 con monto NaN
+        assert "sin OC" in texto               # factura 8003 sin OC
+        assert "sin fecha" in texto            # factura 8005 sin fecha
 
-    def test_fecha_es_datetime(self, facturado):
-        assert pd.api.types.is_datetime64_any_dtype(facturado["fecha"]), (
-            f"Tipo inesperado en 'fecha': {facturado['fecha'].dtype}"
-        )
-
-    def test_no_quedan_filas_de_totales(self, facturado):
-        """Asegura que ningún valor de factura es texto (ej: 'TOTAL', 'OC FACTURADO')."""
-        valores_texto = facturado["factura"].apply(
-            lambda x: isinstance(x, str) and not str(x).isdigit()
-        )
-        assert not valores_texto.any(), "Quedan filas de texto en la columna 'factura'"
-
-    def test_montos_positivos_o_nan(self, facturado):
-        """Todos los montos válidos deben ser positivos."""
-        validos = facturado["monto_actual"].dropna()
-        negativos = (validos < 0).sum()
-        assert negativos == 0, f"Hay {negativos} montos negativos"
-
-    def test_fechas_convertidas_correctamente(self, facturado):
-        """Las fechas no deben ser fechas de época 1970 (indica conversión fallida)."""
-        fechas_validas = facturado["fecha"].dropna()
-        if len(fechas_validas) > 0:
-            anio_minimo = fechas_validas.dt.year.min()
-            assert anio_minimo >= 2000, (
-                f"Fechas sospechosas detectadas (año mínimo: {anio_minimo})"
-            )
-
-    def test_no_modifica_dataframe_original(self, raw_facturado):
-        """La limpieza trabaja sobre copias, no modifica el DataFrame de entrada."""
-        columnas_antes = list(raw_facturado.columns)
-        filas_antes = len(raw_facturado)
+    def test_no_modifica_el_dataframe_de_entrada(self, raw_facturado):
+        cols, filas = list(raw_facturado.columns), len(raw_facturado)
         clean_facturado(raw_facturado)
-        assert list(raw_facturado.columns) == columnas_antes
-        assert len(raw_facturado) == filas_antes
+        assert list(raw_facturado.columns) == cols and len(raw_facturado) == filas
 
 
 class TestCleanPendiente:
-    def test_retorna_tuple(self, raw_pendiente):
-        resultado = clean_pendiente(raw_pendiente)
-        assert isinstance(resultado, tuple) and len(resultado) == 2
-
-    def test_retorna_dataframe_y_lista(self, raw_pendiente):
-        df, warns = clean_pendiente(raw_pendiente)
-        assert isinstance(df, pd.DataFrame)
-        assert isinstance(warns, list)
-
     def test_columnas_correctas(self, pendiente):
-        assert list(pendiente.columns) == COLUMNAS_PENDIENTE, (
-            f"Columnas inesperadas: {list(pendiente.columns)}"
-        )
+        assert list(pendiente.columns) == COLUMNAS_PENDIENTE
 
-    def test_no_esta_vacio(self, pendiente):
-        assert len(pendiente) > 0, "El DataFrame limpio de pendientes está vacío"
+    def test_descarta_totales_y_tipa(self, pendiente):
+        assert len(pendiente) == 5  # 5 cotizaciones válidas (se descarta el TOTAL)
+        assert pd.api.types.is_integer_dtype(pendiente["cot"])
+        assert pd.api.types.is_integer_dtype(pendiente["suc"])
+        assert pd.api.types.is_float_dtype(pendiente["importe"])
 
-    def test_filas_totales_excluidas(self, raw_pendiente, pendiente):
-        assert len(pendiente) < len(raw_pendiente), (
-            "El limpiador no eliminó filas de totales en pendientes"
-        )
+    def test_advierte_importe_invalido_y_cot_duplicada(self, advertencias_pendiente):
+        texto = " | ".join(advertencias_pendiente)
+        assert "importe inválido" in texto         # cot 86 con importe NaN
+        assert "duplicado" in texto                 # cot 74 y 86 repetidas
+        assert "74" in texto and "86" in texto
 
-    def test_cot_sin_nulos(self, pendiente):
-        nulos = pendiente["cot"].isna().sum()
-        assert nulos == 0, f"Hay {nulos} valores nulos en la columna 'cot'"
-
-    def test_cot_es_numerico(self, pendiente):
-        assert pd.api.types.is_integer_dtype(pendiente["cot"]), (
-            f"Tipo inesperado en 'cot': {pendiente['cot'].dtype}"
-        )
-
-    def test_importe_es_float(self, pendiente):
-        assert pd.api.types.is_float_dtype(pendiente["importe"]), (
-            f"Tipo inesperado en 'importe': {pendiente['importe'].dtype}"
-        )
-
-    def test_suc_es_numerico(self, pendiente):
-        assert pd.api.types.is_integer_dtype(pendiente["suc"]), (
-            f"Tipo inesperado en 'suc': {pendiente['suc'].dtype}"
-        )
-
-    def test_no_modifica_dataframe_original(self, raw_pendiente):
-        columnas_antes = list(raw_pendiente.columns)
-        filas_antes = len(raw_pendiente)
+    def test_no_modifica_el_dataframe_de_entrada(self, raw_pendiente):
+        cols, filas = list(raw_pendiente.columns), len(raw_pendiente)
         clean_pendiente(raw_pendiente)
-        assert list(raw_pendiente.columns) == columnas_antes
-        assert len(raw_pendiente) == filas_antes
+        assert list(raw_pendiente.columns) == cols and len(raw_pendiente) == filas
+
+
+class TestCleanFacturasMensual:
+    def test_normaliza_encabezados_con_espacios(self, facturas_mensual):
+        """' Cliente ' y ' Total ' deben quedar como columnas canónicas sin espacios."""
+        assert list(facturas_mensual.columns) == COLUMNAS_MENSUAL
+
+    def test_excluye_facturas_canceladas(self, facturas_mensual, advertencias_facturas_mensual):
+        """El folio 102 ('venta CANCELADO refac') no debe estar en el resultado."""
+        assert (facturas_mensual["folio"] == 102).sum() == 0
+        assert any("cancelada" in a for a in advertencias_facturas_mensual)
+
+    def test_normaliza_cliente_espacios_y_mayusculas(self, facturas_mensual):
+        """'  toyoda  ' y 'Toyoda' → 'TOYODA' (strip + upper)."""
+        assert "TOYODA" in set(facturas_mensual["cliente"])
+        assert "  toyoda  " not in set(facturas_mensual["cliente"])
+
+    def test_parsea_fecha_dd_mm_yyyy(self, facturas_mensual):
+        """'25/12/2025' (texto que Excel no convirtió) → 2025-12-25."""
+        fila = facturas_mensual[facturas_mensual["folio"] == 100].iloc[0]
+        assert fila["fecha"] == pd.Timestamp(2025, 12, 25)
+
+    def test_des_invierte_fecha_iso(self, facturas_mensual):
+        """'2026-05-03 00:00:00' (Excel leyó dd/mm al revés) → 2026-03-05."""
+        fila = facturas_mensual[facturas_mensual["folio"] == 101].iloc[0]
+        assert fila["fecha"] == pd.Timestamp(2026, 3, 5)
+
+    def test_limpia_monto_con_simbolos(self, facturas_mensual):
+        """' $1,234.00 ' → 1234.0."""
+        fila = facturas_mensual[facturas_mensual["folio"] == 100].iloc[0]
+        assert fila["total"] == 1234.0
+
+    def test_monto_nan_queda_nan_y_se_advierte(self, facturas_mensual, advertencias_facturas_mensual):
+        fila = facturas_mensual[facturas_mensual["folio"] == 103].iloc[0]
+        assert pd.isna(fila["total"])
+        assert any("monto inválido" in a for a in advertencias_facturas_mensual)
+
+    def test_conserva_folios_duplicados(self, facturas_mensual):
+        """clean_facturas_mensual NO deduplica: el folio 100 repetido sigue 2 veces."""
+        assert (facturas_mensual["folio"] == 100).sum() == 2
+
+    def test_fecha_pago_vacia_es_nat(self, facturas_mensual):
+        fila = facturas_mensual[facturas_mensual["folio"] == 101].iloc[0]
+        assert pd.isna(fila["fecha_pago"])
+
+
+class TestCleanTrabajos:
+    def test_columnas_correctas(self, trabajos):
+        assert list(trabajos.columns) == COLUMNAS_TRABAJOS
+
+    def test_filtra_filas_parciales(self, trabajos):
+        """Filas con solo cliente o solo tipo_trabajo se descartan: quedan 3 de 5."""
+        assert len(trabajos) == 3
+        assert "Cliente D parcial" not in set(trabajos["cliente"])
+        assert "Solo tipo" not in set(trabajos["tipo_trabajo"])
+
+    def test_mes_en_mayusculas(self, trabajos):
+        assert set(trabajos["mes"]) == {"ENERO", "FEBRERO", "MARZO"}
+
+    def test_normaliza_cliente_con_espacios(self, trabajos):
+        """'  Toyoda  ' → 'Toyoda' (strip; clean_trabajos no aplica upper al cliente)."""
+        assert "Toyoda" in set(trabajos["cliente"])
+
+    def test_pagado_numerico_o_nan(self, trabajos):
+        """'1500' → 1500.0 ; 'SI' y '' → NaN."""
+        por_cliente = trabajos.set_index("cliente")["pagado"]
+        assert por_cliente["Toyoda"] == 1500.0
+        assert pd.isna(por_cliente["Cliente B"])   # venía "SI"
+        assert pd.isna(por_cliente["Cliente C"])   # venía ""

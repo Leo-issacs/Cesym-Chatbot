@@ -1,0 +1,8 @@
+=== INCONSISTENCIAS DETECTADAS ===
+  • Facturas con monto inválido (<= 0 o vacío): [8004]
+  • Facturas sin fecha: [8005]
+  • Facturas sin OC asignada: [8003]
+  • Números de factura duplicados: [8002]
+  • OC repetidas en más de una factura: ['O01-101']
+  • Cotizaciones con importe inválido: [86]
+  • Cotizaciones con número duplicado: [74, 86]
