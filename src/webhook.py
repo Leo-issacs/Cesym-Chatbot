@@ -28,9 +28,10 @@ from src.query_engine import run_query
 from src.sesiones import tiene_sesion, iniciar, iniciar_editar, iniciar_borrar, procesar, cancelar
 from src.escritor import agregar_trabajo, editar_trabajo, borrar_trabajo
 from src.logger import registrar, leer_recientes
-from src.seguridad import verificar_peticion
+from src.seguridad import verificar_peticion, numero_autorizado, _numeros_autorizados
 
 _LIMITE_WA = 1500  # limite por mensaje de WhatsApp via Twilio
+_REPORTES_DIR = Path(__file__).parent.parent / "data" / "reportes"
 
 # ─── Estado global ─────────────────────────────────────────────────────────────
 _datos: dict = {
@@ -261,6 +262,20 @@ def _ejecutar_consulta(entrada: str) -> str:
     return respuesta
 
 
+def _puede_ver_logs(numero: str) -> bool:
+    """
+    'logs' expone metadatos de conversaciones (números enmascarados, consultas).
+    Exige que el número esté en NUMEROS_AUTORIZADOS aunque ENFORCE_WHITELIST esté
+    apagado. Whitelist vacía → niega: a diferencia del caso general (donde lista
+    vacía autoriza a todos para no bloquear a la empresa), aquí no hay motivo
+    legítimo para exponer los logs a cualquiera.
+    """
+    if not _numeros_autorizados():
+        return False
+    autorizado, _ = numero_autorizado(numero)
+    return autorizado
+
+
 # ─── Endpoints ─────────────────────────────────────────────────────────────────
 @app.get("/")
 async def health():
@@ -274,9 +289,16 @@ async def health():
 
 @app.get("/reportes/{filename}")
 async def servir_reporte(filename: str):
-    """Sirve el HTML del reporte generado."""
-    path = Path(__file__).parent.parent / "data" / "reportes" / filename
-    if not path.exists() or path.suffix != ".html":
+    """Sirve el HTML del reporte generado.
+
+    Seguridad: el nombre se reduce a su componente final con Path(filename).name
+    para neutralizar path traversal (../, %2F, rutas absolutas). Además se exige
+    que el archivo resuelto sea exactamente un .html DENTRO de data/reportes/.
+    """
+    reportes_dir = _REPORTES_DIR.resolve()
+    nombre = Path(filename).name
+    path = (reportes_dir / nombre).resolve()
+    if path.parent != reportes_dir or path.suffix != ".html" or not path.is_file():
         raise HTTPException(status_code=404, detail="Reporte no encontrado")
     return FileResponse(path, media_type="text/html")
 
@@ -321,6 +343,10 @@ async def webhook(request: Request, Body: str = Form(...), From: str = Form(...)
         return _twiml("Escribe 'ayuda' para ver los comandos disponibles.")
 
     if entrada.lower() == "logs":
+        if not _puede_ver_logs(numero):
+            return _twiml(
+                "No tienes permiso para ver los logs. Pide acceso al administrador."
+            )
         return _twiml(leer_recientes(20))
 
     # Borrar y editar van primero — comparten alta similitud con "agregar trabajo" en difflib
