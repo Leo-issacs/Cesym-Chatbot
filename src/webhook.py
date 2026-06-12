@@ -31,6 +31,7 @@ from src.logger import registrar, leer_recientes
 from src.seguridad import verificar_peticion
 
 _LIMITE_WA = 1500  # limite por mensaje de WhatsApp via Twilio
+_REPORTES_DIR = Path(__file__).parent.parent / "data" / "reportes"
 
 # ─── Estado global ─────────────────────────────────────────────────────────────
 _datos: dict = {
@@ -274,9 +275,16 @@ async def health():
 
 @app.get("/reportes/{filename}")
 async def servir_reporte(filename: str):
-    """Sirve el HTML del reporte generado."""
-    path = Path(__file__).parent.parent / "data" / "reportes" / filename
-    if not path.exists() or path.suffix != ".html":
+    """Sirve el HTML del reporte generado.
+
+    Seguridad: el nombre se reduce a su componente final con Path(filename).name
+    para neutralizar path traversal (../, %2F, rutas absolutas). Además se exige
+    que el archivo resuelto sea exactamente un .html DENTRO de data/reportes/.
+    """
+    reportes_dir = _REPORTES_DIR.resolve()
+    nombre = Path(filename).name
+    path = (reportes_dir / nombre).resolve()
+    if path.parent != reportes_dir or path.suffix != ".html" or not path.is_file():
         raise HTTPException(status_code=404, detail="Reporte no encontrado")
     return FileResponse(path, media_type="text/html")
 
