@@ -20,7 +20,14 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import pandas as pd
 import openpyxl
 
-from src.loader import load_facturado, load_pendiente, EXCEL_PATH
+from src.loader import load_facturado, load_pendiente, _resolver_ruta_cartera, DATA_RAW_DIR
+
+# loader.py ya no exporta EXCEL_PATH: ahora detecta el Excel dinámicamente.
+# Se resuelve de forma tolerante para que el script importe aunque no haya Excel.
+try:
+    EXCEL_PATH = _resolver_ruta_cartera()
+except FileNotFoundError:
+    EXCEL_PATH = DATA_RAW_DIR / "CARTERA AL 11032026.xlsx"
 from src.cleaner import clean_facturado, clean_pendiente
 from src.query_engine import run_query
 
