@@ -15,7 +15,16 @@ import pandas as pd
 import pytest
 import openpyxl
 
-from src.loader import load_facturado, load_pendiente, EXCEL_PATH
+from src.loader import load_facturado, load_pendiente, _resolver_ruta_cartera, DATA_RAW_DIR
+
+# loader.py ya no exporta EXCEL_PATH: ahora detecta el Excel dinámicamente.
+# Se resuelve aquí de forma tolerante para que pytest pueda RECOLECTAR este módulo
+# aunque no haya Excel en data/raw/. Los tests de contenido fallarán por su cuenta
+# (sin romper la recolección).
+try:
+    EXCEL_PATH = _resolver_ruta_cartera()
+except FileNotFoundError:
+    EXCEL_PATH = DATA_RAW_DIR / "CARTERA AL 11032026.xlsx"
 
 
 class TestArchivoExcel:
