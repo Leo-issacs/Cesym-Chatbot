@@ -1,0 +1,8 @@
+Reporte Mensual (2 facturas):
+  Fac 100 | TOYODA             | $    1,234.00 | 2025-12-25 | Pago: 2025-12-30
+  Fac 100 | TOYODA             | $      999.00 | 2026-01-10 | Pago: 2026-01-11
+Subtotal: $2,233.00
+
+Trabajos (1):
+  Rep R1  ENERO    | Toyoda               | Instalacion               | $1,500.00
+Subtotal cobrado: $1,500.00

@@ -1,0 +1,5 @@
+  Rep R1  ENERO    | Toyoda               | Instalacion               | $1,500.00
+  Rep R2  FEBRERO  | Cliente B            | Mantenimiento             | sin cobrar
+  Rep R3  MARZO    | Cliente C            | Reparacion                | sin cobrar
+────────────────────────────────────────────────────────────
+Total: 3 trabajos  |  Cobrado: $1,500.00  |  Sin cobrar: 2
