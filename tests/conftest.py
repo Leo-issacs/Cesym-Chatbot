@@ -22,6 +22,7 @@ from src.cleaner import (
     clean_facturas_mensual,
     clean_trabajos,
 )
+from src.query_engine import run_query
 from tests.fixtures import datos as fx
 
 
@@ -103,3 +104,12 @@ def excel_cartera(tmp_path_factory):
     """Escribe una sola vez un .xlsx sintético con la estructura real de cartera."""
     destino = tmp_path_factory.mktemp("cartera") / "CARTERA_SINTETICA.xlsx"
     return fx.escribir_excel_cartera(destino)
+
+
+# ─── Helper para ejecutar run_query con los 4 DataFrames sintéticos ──────────
+@pytest.fixture
+def rq(facturado, pendiente, facturas_mensual, trabajos):
+    """rq('total') → str. Ejecuta run_query con los cuatro DataFrames sintéticos."""
+    def _ejecutar(comando: str) -> str:
+        return run_query(comando, facturado, pendiente, facturas_mensual, trabajos)
+    return _ejecutar
