@@ -27,6 +27,9 @@ logs/
 # Memoria interna de Claude Code (herramienta local)
 memory/
 
+# Presentación local (no forma parte del código del proyecto)
+presentacion_cesym.html
+
 # Sistema
 .DS_Store
 Thumbs.db
