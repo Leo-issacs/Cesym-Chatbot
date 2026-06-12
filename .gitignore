@@ -15,10 +15,8 @@ ENV/
 .credentials/
 
 # Archivos de datos reales (nunca subir al repo)
-data/raw/
-data/backups/
-data/processed/
-data/reportes/
+# Incluye la base SQLite (data/cesym.db) y todos los subdirectorios.
+data/
 logs/
 
 # Excel reales

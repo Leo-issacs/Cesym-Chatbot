@@ -1,0 +1,6 @@
+# Normalización de fin de línea para todo el repositorio.
+# Git almacena los archivos de texto con LF y los entrega según la plataforma.
+* text=auto eol=lf
+
+# Los scripts de PowerShell deben conservar CRLF en el working tree.
+*.ps1 text eol=crlf
