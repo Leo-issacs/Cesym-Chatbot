@@ -12,6 +12,7 @@ Variables de entorno requeridas para enviar email:
 
 import io
 import os
+import secrets
 import smtplib
 from datetime import datetime
 from email import encoders
@@ -523,11 +524,36 @@ def generar_html(
 
     reportes_dir = Path(__file__).parent.parent / "data" / "reportes"
     reportes_dir.mkdir(parents=True, exist_ok=True)
-    nombre = f"reporte_{periodo}_{datetime.now().strftime('%Y%m%d_%H%M')}.html"
+
+    # Limpieza: borra los reportes HTML con más de 24 h antes de crear el nuevo.
+    _purgar_reportes_viejos(reportes_dir)
+
+    # Token aleatorio en el nombre: la URL que el bot manda por WhatsApp deja de
+    # ser adivinable (antes era reporte_<periodo>_<fecha>.html, predecible).
+    token = secrets.token_urlsafe(16)
+    nombre = f"reporte_{periodo}_{datetime.now().strftime('%Y%m%d_%H%M')}_{token}.html"
     html_path = reportes_dir / nombre
     html_path.write_text(html, encoding="utf-8")
 
     return html_path
+
+
+_REPORTE_TTL_HORAS = 24
+
+
+def _purgar_reportes_viejos(reportes_dir: Path) -> None:
+    """
+    Borra los reportes HTML con más de _REPORTE_TTL_HORAS horas de antigüedad.
+    Solo toca archivos 'reporte_*.html' (no los CSV/PDF ni las salidas del ETL).
+    Falla en silencio por archivo: un borrado fallido no impide generar el nuevo.
+    """
+    limite = datetime.now().timestamp() - _REPORTE_TTL_HORAS * 3600
+    for archivo in reportes_dir.glob("reporte_*.html"):
+        try:
+            if archivo.stat().st_mtime < limite:
+                archivo.unlink()
+        except OSError:
+            pass
 
 
 # ── Construcción del PDF ──────────────────────────────────────────────────────
