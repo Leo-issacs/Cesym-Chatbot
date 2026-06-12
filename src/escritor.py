@@ -71,6 +71,56 @@ def _obtener_o_crear_archivo_trabajos() -> Path:
         return path
 
 
+# Mensaje (se manda por WhatsApp) cuando el guard de seguridad aborta la escritura.
+_MSG_ABORTO_GUARDIA = (
+    "No se guardó el cambio para no perder registros del archivo.\n"
+    "El Excel quedó intacto. Intenta de nuevo o avisa a soporte."
+)
+
+
+def _cargar_trabajos(path: Path):
+    """
+    Lee el Excel COMPLETO (todas las filas, incluidas las parciales) y calcula
+    qué filas ve el bot.
+
+    El filtro "cliente Y tipo_trabajo no nulos" se usa SOLO para mapear el índice
+    posicional que el bot muestra por WhatsApp a la fila real del archivo. NUNCA
+    para decidir qué se escribe: las filas parciales (capturas a medias, notas)
+    deben conservarse en su posición original.
+
+    Retorna:
+        df               : DataFrame con TODAS las filas del Excel.
+        indices_visibles : etiquetas de índice de las filas visibles, en orden.
+                           La posición i es el índice que expone el bot; su valor
+                           es la etiqueta real en df.
+        cliente_col      : nombre de la columna de cliente (posición 2).
+        tipo_col         : nombre de la columna de tipo de trabajo (posición 6).
+    """
+    df = pd.read_excel(path, header=0, dtype=str)
+    cliente_col = df.columns[2]
+    tipo_col = df.columns[6]
+    mask = df[cliente_col].notna() & df[tipo_col].notna()
+    indices_visibles = list(df.index[mask])
+    return df, indices_visibles, cliente_col, tipo_col
+
+
+def _persistir_seguro(df: pd.DataFrame, path: Path, filas_esperadas: int) -> str | None:
+    """
+    Escribe df al Excel SOLO si conserva el número de filas esperado; respalda el
+    archivo actual justo antes de sobrescribirlo.
+
+    Es la red de seguridad del fix P0.2: si la operación fuera a perder filas que
+    no se borraron a propósito (regresión), aborta sin tocar el Excel.
+
+    Retorna None si se escribió correctamente, o un mensaje de error si se abortó.
+    """
+    if len(df) != filas_esperadas:
+        return _MSG_ABORTO_GUARDIA
+    _hacer_backup(path)
+    df.to_excel(path, index=False)
+    return None
+
+
 def agregar_trabajo(datos: dict) -> str:
     """
     Agrega una fila al Excel de control de trabajos, hace backup y sube a Drive.
@@ -82,15 +132,10 @@ def agregar_trabajo(datos: dict) -> str:
     """
     path = _obtener_o_crear_archivo_trabajos()
 
-    # Backup antes de escribir
-    _hacer_backup(path)
-
-    # Leer Excel existente y limpiar filas sin cliente ni tipo de trabajo
-    # (evita que filas vacías o celdas sueltas desplacen los registros nuevos)
-    df = pd.read_excel(path, header=0, dtype=str)
-    cliente_col = df.columns[2]
-    tipo_col = df.columns[6]
-    df = df[df[cliente_col].notna() & df[tipo_col].notna()].reset_index(drop=True)
+    # Leer el Excel COMPLETO. La nueva fila se agrega al final sin descartar las
+    # filas parciales existentes (el bug P0.2 era escribir el DataFrame filtrado).
+    df, _, _, _ = _cargar_trabajos(path)
+    filas_originales = len(df)
 
     # Construir nueva fila usando los nombres de columna originales del Excel
     nueva_fila = {
@@ -107,7 +152,10 @@ def agregar_trabajo(datos: dict) -> str:
     }
 
     df = pd.concat([df, pd.DataFrame([nueva_fila])], ignore_index=True)
-    df.to_excel(path, index=False)
+
+    error = _persistir_seguro(df, path, filas_originales + 1)
+    if error:
+        return error
 
     # Subir a Drive si está configurado
     import os
@@ -148,23 +196,25 @@ def _subir_a_drive(path: Path) -> str | None:
 
 def borrar_trabajo(indice: int) -> str:
     """
-    Elimina un trabajo del Excel por su índice en el DataFrame limpio.
+    Elimina un trabajo del Excel por su índice en la vista que muestra el bot.
+    Conserva el resto de las filas (incluidas las parciales) en su posición.
     Hace backup antes de modificar y sube a Drive.
     """
     path = _obtener_o_crear_archivo_trabajos()
-    _hacer_backup(path)
+    df, indices_visibles, cliente_col, _ = _cargar_trabajos(path)
+    filas_originales = len(df)
 
-    df = pd.read_excel(path, header=0, dtype=str)
-    cliente_col = df.columns[2]
-    tipo_col = df.columns[6]
-    df_limpio = df[df[cliente_col].notna() & df[tipo_col].notna()].reset_index(drop=True)
-
-    if indice < 0 or indice >= len(df_limpio):
+    if indice < 0 or indice >= len(indices_visibles):
         return "Error: trabajo no encontrado."
 
-    cliente = df_limpio.at[indice, cliente_col]
-    df_limpio = df_limpio.drop(index=indice).reset_index(drop=True)
-    df_limpio.to_excel(path, index=False)
+    # Mapear el índice visible al índice real y borrar SOLO esa fila del df completo.
+    idx_real = indices_visibles[indice]
+    cliente = df.at[idx_real, cliente_col]
+    df = df.drop(index=idx_real)
+
+    error = _persistir_seguro(df, path, filas_originales - 1)
+    if error:
+        return error
 
     error_drive = _subir_a_drive(path)
     if error_drive:
@@ -189,22 +239,22 @@ def editar_trabajo(indice: int, campo: str, valor: str) -> str:
         return f"Campo '{campo}' no reconocido."
 
     path = _obtener_o_crear_archivo_trabajos()
-    _hacer_backup(path)
+    df, indices_visibles, _, _ = _cargar_trabajos(path)
 
-    df = pd.read_excel(path, header=0, dtype=str)
-    cliente_col = df.columns[2]
-    tipo_col = df.columns[6]
-    df_limpio = df[df[cliente_col].notna() & df[tipo_col].notna()].reset_index(drop=True)
-
-    if indice < 0 or indice >= len(df_limpio):
+    if indice < 0 or indice >= len(indices_visibles):
         return "Error: trabajo no encontrado."
 
-    col_name = df_limpio.columns[col_idx]
-    df_limpio.at[indice, col_name] = valor if valor else None
-    df_limpio.to_excel(path, index=False)
+    # Editar la celda en el df completo (la edición no cambia el número de filas).
+    idx_real = indices_visibles[indice]
+    col_name = df.columns[col_idx]
+    df.at[idx_real, col_name] = valor if valor else None
+
+    error = _persistir_seguro(df, path, len(df))
+    if error:
+        return error
 
     error_drive = _subir_a_drive(path)
     if error_drive:
         return error_drive
 
-    return f"Trabajo actualizado correctamente."
+    return "Trabajo actualizado correctamente."
