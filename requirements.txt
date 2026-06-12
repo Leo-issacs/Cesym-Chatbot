@@ -1,18 +1,25 @@
-pandas>=3.0.0
-openpyxl>=3.1.5
-sqlalchemy>=2.0.0
-psycopg2-binary>=2.9.0
-pytest>=8.0.0
-google-api-python-client>=2.100.0
-google-auth-httplib2>=0.2.0
-google-auth-oauthlib>=1.1.0
-anthropic>=0.40.0
-fastapi>=0.100.0
-uvicorn[standard]>=0.20.0
-twilio>=9.0.0
-python-multipart>=0.0.9
-matplotlib>=3.7.0
-reportlab>=4.0.0
-scikit-learn>=1.3.0
-fuzzywuzzy>=0.18.0
-python-Levenshtein>=0.12.0
+# requirements.txt — versiones pineadas para builds reproducibles en Railway.
+#
+# Generado a partir de las versiones EXACTAS instaladas en venv_Cesym_Chatbot
+# (pip freeze, Python 3.11.9). Solo dependencias DIRECTAS de runtime; pip
+# resuelve el árbol transitivo. La intención y los rangos están en requirements.in.
+#
+# NO actualizar a ciegas: estas son las versiones que funcionan hoy en producción.
+# Las deps solo-ETL (fuzzywuzzy, python-Levenshtein) están en requirements.in.
+
+pandas==3.0.3
+openpyxl==3.1.5
+SQLAlchemy==2.0.50
+psycopg2-binary==2.9.12
+google-api-python-client==2.196.0
+google-auth-httplib2==0.4.0
+google-auth-oauthlib==1.4.0
+anthropic==0.104.1
+fastapi==0.136.3
+uvicorn[standard]==0.48.0
+twilio==9.10.9
+python-multipart==0.0.29
+matplotlib==3.10.9
+reportlab==4.5.1
+scikit-learn==1.8.0
+pytest==9.0.3
