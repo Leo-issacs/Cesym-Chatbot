@@ -70,8 +70,8 @@ se importa en producción por sus helpers — ver abajo).
 
 | Script | Qué hace | Estado |
 |---|---|---|
-| `scripts/cargar_bd.py` | **ETL Excel → SQLite** (`data/cesym.db`). Normaliza clientes con fuzzy matching. | ⚠ **ROTO** — importa `fuzzywuzzy`, no instalada. Ver Deuda. |
-| `scripts/migrar_sqlite_a_postgres.py` | Migración idempotente SQLite → Postgres. Preserva IDs, resetea secuencias. | Depende de que `cesym.db` esté fresco (lo produce el script roto). |
+| `scripts/cargar_bd.py` | **ETL Excel → SQLite** (`data/cesym.db`). Normaliza clientes con fuzzy matching. | OK — requiere `requirements-etl.txt` (fuzzywuzzy); guard con mensaje claro si falta. |
+| `scripts/migrar_sqlite_a_postgres.py` | Migración idempotente SQLite → Postgres. Preserva IDs, resetea secuencias. | OK — lee `cesym.db` (lo produce `cargar_bd.py`). Requiere `DATABASE_URL`. |
 | `scripts/etl.py` | ETL alternativo Excel → CSVs en `data/reportes/`. No toca BD. | OK (usa loader/cleaner). |
 | `scripts/sync_drive.py` | Descarga los Excel de Drive a `data/raw/`. | OK. |
 | `scripts/clasificador_conceptos.py` | Clasificador NLP (scikit-learn) de la columna CONCEPTO en 5 categorías HVAC. | Standalone. |
@@ -140,13 +140,12 @@ Plantilla en `.env.example`.
 Divergencias detectadas entre lo que el código hace y lo que dicen docstrings,
 CLAUDE.md o el propio código. **No se corrigió código** en este trabajo de docs.
 
-1. **`scripts/cargar_bd.py` está roto (rompe la actualización de Postgres).**
-   Importa `from fuzzywuzzy import fuzz, process` a nivel de módulo
-   (`cargar_bd.py:46`), pero `fuzzywuzzy`/`python-Levenshtein` no están instaladas
-   ni en `requirements.txt` (se movieron a `requirements.in` como deps solo-ETL).
-   Es la **única** vía de regenerar `data/cesym.db`, que a su vez alimenta
-   `migrar_sqlite_a_postgres.py`. Resultado: no hay forma funcional de refrescar
-   los datos de Postgres. Detalle completo en [DATA_FLOW.md](./DATA_FLOW.md).
+1. ~~**`scripts/cargar_bd.py` está roto (rompe la actualización de Postgres).**~~
+   **RESUELTO.** Antes importaba `fuzzywuzzy` (ausente del venv) a nivel de módulo
+   y abortaba, dejando sin forma de regenerar `data/cesym.db`. Ahora las deps de
+   ETL están en `requirements-etl.txt` (pineadas) y el import tiene un guard con
+   mensaje accionable. Verificado: `cargar_bd.py --limpiar` reconstruye el SQLite
+   y la migración lee de ahí. Detalle en [DATA_FLOW.md → §3](./DATA_FLOW.md).
 
 2. **`scripts/run_manual_tests.py` está roto.** `run_manual_tests.py:23` hace
    `from src.loader import ..., EXCEL_PATH`, pero `loader.py` ya no define

@@ -43,7 +43,17 @@ from src.db import conectar, crear_schema, limpiar_tablas
 # fuzzywuzzy para normalizar nombres de clientes
 # "process" tiene las funciones de alto nivel (buscar el más similar, deduplicar)
 # "fuzz" tiene las funciones de bajo nivel (calcular el % de similitud entre dos strings)
-from fuzzywuzzy import fuzz, process
+# Es una dependencia SOLO de ETL: no está en requirements.txt (runtime) sino en
+# requirements-etl.txt. Si falta, damos un mensaje accionable en lugar de un
+# ImportError crudo que rompía toda la cadena de refresco de Postgres.
+try:
+    from fuzzywuzzy import fuzz, process
+except ImportError:
+    sys.exit(
+        "Falta 'fuzzywuzzy' (dependencia de ETL, no del runtime).\n"
+        "Instálala con:  pip install -r requirements-etl.txt\n"
+        "Luego reintenta: python -X utf8 scripts/cargar_bd.py"
+    )
 
 
 # ══════════════════════════════════════════════════════════════════════════════

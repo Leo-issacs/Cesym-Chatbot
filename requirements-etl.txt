@@ -1,0 +1,16 @@
+# requirements-etl.txt — dependencias SOLO del pipeline ETL local.
+#
+# NO se instalan en Railway: el runtime (uvicorn src.webhook:app) no las necesita
+# (hace fuzzy matching con difflib de la stdlib). Estas libs las usa únicamente
+# scripts/cargar_bd.py para normalizar nombres de clientes al cargar el SQLite,
+# que luego migra_sqlite_a_postgres.py sube a Postgres.
+#
+# Instálalas en local antes de correr el ETL:
+#   pip install -r requirements-etl.txt
+#
+# Pineadas con == (versiones instaladas hoy, Python 3.11.9) por las mismas
+# razones de reproducibilidad que requirements.txt. La intención (rangos) está
+# documentada en requirements.in.
+
+fuzzywuzzy==0.18.0
+python-Levenshtein==0.27.3

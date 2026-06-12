@@ -83,8 +83,10 @@ pip install -r requirements.txt
 
 > `requirements.txt` está pineado con `==` (builds reproducibles en Railway).
 > `requirements.in` documenta las deps directas y su intención. Las deps **solo
-> de ETL** (`fuzzywuzzy`, `python-Levenshtein`) NO están en `requirements.txt`:
-> instálalas a mano solo si vas a correr `scripts/cargar_bd.py`.
+> de ETL** (`fuzzywuzzy`, `python-Levenshtein`) NO están en `requirements.txt`;
+> viven pineadas en **`requirements-etl.txt`**. Instálalas solo si vas a correr el
+> ETL: `pip install -r requirements-etl.txt`. Ver
+> [docs/DATA_FLOW.md → §3](docs/DATA_FLOW.md) para refrescar Postgres.
 
 ## Cómo correr
 
