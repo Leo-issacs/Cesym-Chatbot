@@ -1,5 +1,7 @@
 # Cesym Chatbot
 
+[![tests](https://github.com/Leo-issacs/Cesym-Chatbot/actions/workflows/tests.yml/badge.svg)](https://github.com/Leo-issacs/Cesym-Chatbot/actions/workflows/tests.yml)
+
 Chatbot de WhatsApp para consultar la cartera de facturas, cotizaciones pendientes y registrar trabajos realizados. Corre en la nube (Railway) y responde desde cualquier número conectado al sandbox de Twilio.
 
 ---

@@ -115,16 +115,27 @@ Abre el REPL `cartera>`. Escribe `ayuda` para ver comandos, `salir` para cerrar,
 
 ```powershell
 pytest                       # corre toda la suite
-pytest tests/test_seguridad.py   # único test hermético (no necesita Excel)
 ```
 
-⚠ **Estado real de los tests (ver Deuda documentada):**
-- `tests/test_loader.py` rompe la **colección** de pytest: importa `EXCEL_PATH`,
-  que ya no existe en `loader.py`. Hasta arreglarlo, corre con
-  `pytest --ignore=tests/test_loader.py` o deselecciónalo.
-- `test_cleaner`, `test_queries`, `test_validator` **no son herméticos**: sus
-  fixtures (`conftest.py`) leen un `CARTERA*.xlsx` real de `data/raw/` (gitignored).
-  Sin ese Excel, fallan. Consigue el archivo (Drive / `actualizar`) antes de correrlos.
+La suite es **hermética**: usa fixtures sintéticos (`tests/fixtures/`), no toca
+`data/raw/`, ni BD externa, ni credenciales. Corre igual en local y en CI sin
+configurar nada. Los chequeos sobre datos reales (conteos, % de facturas sin
+fecha de pago) viven en `scripts/data_quality.py`, fuera de pytest.
+
+El golden master (`tests/test_golden_master.py`) compara la salida exacta de
+`run_query` contra `tests/snapshots/`. Si cambias el comportamiento a propósito,
+regenera con `UPDATE_SNAPSHOTS=1 pytest tests/test_golden_master.py` y revisa el
+`git diff` de los snapshots antes de commitear.
+
+### Integración continua (CI)
+
+GitHub Actions (`.github/workflows/tests.yml`) corre `pytest` en cada push y pull
+request (Python 3.11). El estado se ve en el badge del `README.md`.
+
+- **No se mergea un PR con CI en rojo.** Arregla la causa (o, si la salida del
+  golden master cambió a propósito, regenera los snapshots) hasta que esté verde.
+- El workflow **no inyecta secretos ni servicios**. Si un test los necesitara, el
+  test está mal (no es hermético), no el workflow.
 
 ## Convenciones
 
