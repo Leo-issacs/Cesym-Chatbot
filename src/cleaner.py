@@ -43,9 +43,9 @@ def clean_facturado(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
     df["factura"] = pd.to_numeric(df["factura"], errors="coerce").astype("Int64")
     df["monto_actual"] = pd.to_numeric(df["monto_actual"], errors="coerce")
     df["fecha"] = pd.to_datetime(df["fecha"], errors="coerce")
-    df["oc"] = df["oc"].astype(str).str.strip()
-    df["prioridad"] = df["prioridad"].astype(str).str.strip().replace("nan", "")
-    df["estado"] = df["estado"].astype(str).str.strip().replace("nan", "")
+    df["oc"] = df["oc"].fillna("").astype(str).str.strip()
+    df["prioridad"] = df["prioridad"].fillna("").astype(str).str.strip()
+    df["estado"] = df["estado"].fillna("").astype(str).str.strip()
 
     df = df.reset_index(drop=True)
 
@@ -100,7 +100,7 @@ def clean_pendiente(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
     df["cot"] = pd.to_numeric(df["cot"], errors="coerce").astype("Int64")
     df["suc"] = pd.to_numeric(df["suc"], errors="coerce").astype("Int64")
     df["importe"] = pd.to_numeric(df["importe"], errors="coerce")
-    df["concepto"] = df["concepto"].astype(str).str.strip().replace("nan", "")
+    df["concepto"] = df["concepto"].fillna("").astype(str).str.strip()
 
     df = df.reset_index(drop=True)
 
@@ -196,8 +196,8 @@ def clean_facturas_mensual(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
 
     # --- Conversión de tipos ---
     df["folio"] = pd.to_numeric(df["folio"], errors="coerce").astype("Int64")
-    df["cliente"] = df["cliente"].astype(str).str.strip().str.upper().replace("NAN", "")
-    df["concepto"] = df["concepto"].astype(str).str.strip()
+    df["cliente"] = df["cliente"].fillna("").astype(str).str.strip().str.upper()
+    df["concepto"] = df["concepto"].fillna("").astype(str).str.strip()
 
     # Limpiar monto: " $1,234.00 " o "1234.0" → 1234.0
     df["total"] = (
@@ -263,13 +263,13 @@ def clean_trabajos(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
 
     # --- Conversión de tipos ---
     df["mes"] = df["mes"].astype(str).str.strip().str.upper().replace("NAN", "")
-    df["tecnico"] = df["tecnico"].astype(str).str.strip().replace("nan", "")
-    df["cliente"] = df["cliente"].astype(str).str.strip().replace("nan", "")
-    df["rep_num"] = df["rep_num"].astype(str).str.strip().replace("nan", "")
-    df["domicilio"] = df["domicilio"].astype(str).str.strip().replace("nan", "")
-    df["telefono"] = df["telefono"].astype(str).str.strip().replace("nan", "")
-    df["tipo_trabajo"] = df["tipo_trabajo"].astype(str).str.strip().replace("nan", "")
-    df["recibe"] = df["recibe"].astype(str).str.strip().replace("nan", "")
+    df["tecnico"] = df["tecnico"].fillna("").astype(str).str.strip()
+    df["cliente"] = df["cliente"].fillna("").astype(str).str.strip().str.upper()
+    df["rep_num"] = df["rep_num"].fillna("").astype(str).str.strip()
+    df["domicilio"] = df["domicilio"].fillna("").astype(str).str.strip()
+    df["telefono"] = df["telefono"].fillna("").astype(str).str.strip()
+    df["tipo_trabajo"] = df["tipo_trabajo"].fillna("").astype(str).str.strip()
+    df["recibe"] = df["recibe"].fillna("").astype(str).str.strip()
 
     # PAGADO: intenta parsear como monto numérico; si es "SI"/"NO"/vacío queda NaN
     df["pagado"] = (

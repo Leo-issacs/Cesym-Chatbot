@@ -143,13 +143,14 @@ class TestCleanTrabajos:
     def test_mes_en_mayusculas(self, trabajos):
         assert set(trabajos["mes"]) == {"ENERO", "FEBRERO", "MARZO"}
 
-    def test_normaliza_cliente_con_espacios(self, trabajos):
-        """'  Toyoda  ' → 'Toyoda' (strip; clean_trabajos no aplica upper al cliente)."""
-        assert "Toyoda" in set(trabajos["cliente"])
+    def test_normaliza_cliente_con_espacios_y_mayusculas(self, trabajos):
+        """'  Toyoda  ' → 'TOYODA' (strip + upper, para paridad con el ETL/Postgres)."""
+        assert "TOYODA" in set(trabajos["cliente"])
+        assert "Toyoda" not in set(trabajos["cliente"])
 
     def test_pagado_numerico_o_nan(self, trabajos):
         """'1500' → 1500.0 ; 'SI' y '' → NaN."""
         por_cliente = trabajos.set_index("cliente")["pagado"]
-        assert por_cliente["Toyoda"] == 1500.0
-        assert pd.isna(por_cliente["Cliente B"])   # venía "SI"
-        assert pd.isna(por_cliente["Cliente C"])   # venía ""
+        assert por_cliente["TOYODA"] == 1500.0
+        assert pd.isna(por_cliente["CLIENTE B"])   # venía "SI"
+        assert pd.isna(por_cliente["CLIENTE C"])   # venía ""

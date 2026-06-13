@@ -4,5 +4,5 @@ Reporte Mensual (2 facturas):
 Subtotal: $2,233.00
 
 Trabajos (1):
-  Rep R1  ENERO    | Toyoda               | Instalacion               | $1,500.00
+  Rep R1  ENERO    | TOYODA               | Instalacion               | $1,500.00
 Subtotal cobrado: $1,500.00
