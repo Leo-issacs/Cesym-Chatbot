@@ -59,10 +59,14 @@ def _cargar_datos() -> tuple:
     Carga y limpia todos los datos.
     Retorna (facturado, pendiente, facturas_mensual, trabajos, advertencias).
 
-    USE_POSTGRES_READS=1 → lee desde las tablas de PostgreSQL (schema chatbot).
-    USE_POSTGRES_READS=0 → comportamiento original: lee desde archivos Excel (default).
+    USE_POSTGRES_READS=1 → lee desde las tablas de PostgreSQL (schema chatbot). DEFAULT.
+    USE_POSTGRES_READS=0 → fuerza la lectura desde los archivos Excel.
+
+    Si la lectura de Postgres falla (p.ej. sin DATABASE_URL o BD caída), cae a Excel.
+    La equivalencia de salida entre ambas rutas está respaldada por el golden master
+    (tests/test_equivalencia_postgres.py).
     """
-    if os.getenv("USE_POSTGRES_READS", "0") == "1":
+    if os.getenv("USE_POSTGRES_READS", "1") == "1":
         try:
             from src.datos_postgres import cargar_datos_desde_postgres
             return cargar_datos_desde_postgres()
