@@ -264,7 +264,7 @@ def clean_trabajos(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
     # --- Conversión de tipos ---
     df["mes"] = df["mes"].astype(str).str.strip().str.upper().replace("NAN", "")
     df["tecnico"] = df["tecnico"].fillna("").astype(str).str.strip()
-    df["cliente"] = df["cliente"].fillna("").astype(str).str.strip()
+    df["cliente"] = df["cliente"].fillna("").astype(str).str.strip().str.upper()
     df["rep_num"] = df["rep_num"].fillna("").astype(str).str.strip()
     df["domicilio"] = df["domicilio"].fillna("").astype(str).str.strip()
     df["telefono"] = df["telefono"].fillna("").astype(str).str.strip()
