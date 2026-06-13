@@ -163,7 +163,7 @@ Plantilla completa en `.env.example`. En local se cargan desde `.env`
 |---|---|---|---|
 | `DATABASE_URL` | — | `db_postgres.py` | Conexión runtime a Postgres (Supabase: pooler 6543). |
 | `DATABASE_MIGRATION_URL` | = `DATABASE_URL` | `db_postgres.py` | DDL/migraciones (Supabase: directo 5432). |
-| `USE_POSTGRES_READS` | `0` | `cli.py` | `1` = lee datos de Postgres en vez de Excel. |
+| `USE_POSTGRES_READS` | `1` | `cli.py` | `1` (default) = lee de Postgres; `0` = fuerza Excel. Cae a Excel si Postgres falla. |
 | `USE_POSTGRES_SESSIONS` | `0` | `sesiones.py` | `1` = sesiones en `chatbot.sesiones_bot` en vez de JSON. |
 | `DRIVE_FOLDER_ID` | — | `cli`, `webhook`, `escritor`, `logger`, `sesiones` | Carpeta de Drive con los Excel. Sin esto, no hay sync. |
 | `DRIVE_BACKUPS_FOLDER_ID` | — | `escritor.py` | Carpeta de Drive para backups de Excel. |
