@@ -1,0 +1,52 @@
+╔══════════════════════════════════════════════════════╗
+              COMANDOS DISPONIBLES
+╚══════════════════════════════════════════════════════╝
+
+  TOTALES Y RESUMEN
+  ─────────────────
+  total                    → Total general de cartera
+  total facturado          → Solo OC facturadas
+  total pendiente          → Solo cotizaciones pendientes
+  total mensual            → Reporte mensual: cobrado vs sin cobrar
+  resumen                  → Vista general con conteos y estados
+
+  CARTERA (Excel)
+  ───────────────
+  facturas                 → Todas las OC facturadas
+  pendientes               → Todas las cotizaciones pendientes
+  pendientes [suc]         → Pendientes de una sucursal especifica
+  estado [texto]           → Filtrar por estado (ej: estado aceptada)
+  estado prioridad         → Solo las facturas marcadas como prioridad
+
+  REPORTE MENSUAL
+  ───────────────
+  cobradas                 → Facturas con fecha de pago
+  sin cobrar               → Facturas sin fecha de pago
+  buscar cliente [nombre]  → Facturas de un cliente
+
+  CRUCE
+  ─────
+  cruce                    → Facturas en cartera ya pagadas en el reporte
+
+  BUSCAR
+  ──────
+  buscar oc [texto]        → Por numero de OC
+  buscar factura [num]     → Por numero de factura
+  buscar cot [num]         → Por cotizacion pendiente
+  buscar suc [num]         → Pendientes de una sucursal
+  buscar cliente [nombre]  → Facturas y trabajos de un cliente
+  buscar tecnico [nombre]  → Trabajos de un tecnico
+  buscar fecha [YYYY-MM]   → Registros de un mes (ej: 2026-03)
+  buscar fecha [YYYY-MM-DD]→ Registros de una fecha exacta
+
+  TRABAJOS CASUALES
+  ─────────────────
+  trabajos                 → Todos los trabajos
+  trabajos [mes]           → Trabajos de un mes (ej: enero)
+  total trabajos           → Total cobrado y pendiente
+
+  OTROS
+  ─────
+  errores | actualizar | ayuda
+  reporte          → Genera y envía PDF mensual por email
+  reporte semanal  → Genera y envía PDF semanal por email

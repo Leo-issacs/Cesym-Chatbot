@@ -1,0 +1,9 @@
+Reporte Mensual (2 facturas):
+  Fac 7001 | TOYODA             | $    5,000.00 | 2026-01-05 | Pago: 2026-01-20
+  Fac 7003 | TOYODA             | $    1,200.00 | 2026-02-12 | Pago: 2026-02-25
+Subtotal: $6,200.00
+
+Trabajos (2):
+  Rep T1  ENERO    | TOYODA               | INSTALACION               | $2,000.00
+  Rep T3  MARZO    | TOYODA               | REPARACION                | $800.00
+Subtotal cobrado: $2,800.00

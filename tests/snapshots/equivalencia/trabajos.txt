@@ -1,0 +1,5 @@
+  Rep T1  ENERO    | TOYODA               | INSTALACION               | $2,000.00
+  Rep T2  FEBRERO  | ACME SA              | MANTENIMIENTO             | sin cobrar
+  Rep T3  MARZO    | TOYODA               | REPARACION                | $800.00
+────────────────────────────────────────────────────────────
+Total: 3 trabajos  |  Cobrado: $2,800.00  |  Sin cobrar: 1
