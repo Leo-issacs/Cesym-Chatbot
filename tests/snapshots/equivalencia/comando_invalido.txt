@@ -1,0 +1,2 @@
+Comando no reconocido: 'comando_que_no_existe'.
+Escribe 'ayuda' para ver los comandos disponibles.

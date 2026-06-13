@@ -1,0 +1,2 @@
+=== INCONSISTENCIAS DETECTADAS ===
+  • Facturas con monto inválido (<= 0 o vacío): [9003]

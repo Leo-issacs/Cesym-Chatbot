@@ -29,3 +29,47 @@ jobs:
       # test los necesitara, el test está mal, no el workflow.
       - name: Ejecutar tests
         run: pytest
+
+  # Job dedicado a la prueba de equivalencia Excel <-> Postgres (PR-12): levanta
+  # una Postgres efímera (servicio) y corre ese test contra ella. El job 'test'
+  # de arriba sigue sin servicios; allí la mitad Postgres simplemente se salta.
+  equivalencia-postgres:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: cesym_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      # BD desechable del servicio efímero. NUNCA producción: el test hace DROP SCHEMA.
+      TEST_DATABASE_URL: postgresql+psycopg2://postgres:postgres@localhost:5432/cesym_test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Configurar Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Ejecutar prueba de equivalencia (Excel == Postgres)
+        run: pytest tests/test_equivalencia_postgres.py

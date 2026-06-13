@@ -1,0 +1,20 @@
+╔══════════════════════════════════╗
+       RESUMEN DE CARTERA
+╚══════════════════════════════════╝
+  OC Facturadas  :    4 registros   $    5,250.75
+  OC Pendientes  :    3 registros   $    8,700.00
+  Con prioridad  :    1 factura(s)
+
+  Estados (OC Facturado):
+    ACEPTADA: 2
+    PREV ACEPTADO: 1
+    Sin estado: 1
+  ─── Reporte Mensual ───────────────
+  Facturas emitidas:    4   $    9,200.00
+    Con fecha pago :    3
+    Sin fecha pago :    1
+
+  ─── Trabajos Casuales ─────────────
+  Trabajos registrados:   3
+    Cobrado    : $    2,800.00
+    Sin cobrar :   1 trabajo(s)
