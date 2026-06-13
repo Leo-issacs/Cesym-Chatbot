@@ -27,6 +27,9 @@ from pathlib import Path
 
 import pytest
 
+# Snapshots regenerados en PR-13: fix <NA>→'' (fillna antes de astype, pandas 3.0)
+# y upper en el cliente de clean_trabajos. Solo cambió el casing del cliente de
+# trabajos (Toyoda→TOYODA) en trabajos/buscar_cliente_toyoda/buscar_cliente_typo.
 SNAP_DIR = Path(__file__).parent / "snapshots"
 
 # (slug de archivo, comando) — ~15 comandos representativos del bot.
