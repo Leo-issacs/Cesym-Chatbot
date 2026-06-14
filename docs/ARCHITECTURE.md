@@ -59,7 +59,8 @@ se importa en producción por sus helpers — ver abajo).
 | `src/db_postgres.py` | Conexión SQLAlchemy a Postgres, DDL del schema `chatbot`, engines de runtime vs migración, reset de secuencias. |
 | `src/sesiones.py` | Máquina de estados de conversaciones multi-turno (agregar/editar/borrar trabajo). Persiste en `data/sesiones.json` o en Postgres según `USE_POSTGRES_SESSIONS`. |
 | `src/sesiones_pg.py` | Backend Postgres de sesiones (tabla `chatbot.sesiones_bot`, JSONB). Inactivo por defecto. |
-| `src/escritor.py` | **Única** ruta de escritura de datos del bot: modifica el Excel de trabajos, hace backup y sube a Drive. No escribe a Postgres. |
+| `src/escritor.py` | Ruta de escritura de datos del bot: modifica el Excel de trabajos, hace backup y sube a Drive. Con `USE_POSTGRES_WRITES=1` además escribe en Postgres (vía `escritor_pg.py`), best-effort. |
+| `src/escritor_pg.py` | Primitivas de escritura de trabajos en Postgres (`insertar`/`actualizar`/`borrar` + `resolver_o_crear` cliente/técnico). Reciben la conexión; el caller maneja la transacción. Solo se usa con `USE_POSTGRES_WRITES=1`. |
 | `src/seguridad.py` | Validación de firma Twilio + whitelist de números. Modo log-only por defecto (ver flags). |
 | `src/logger.py` | Log de consultas en `data/logs/queries.log` (enmascara números, retención 30 días, sube a Drive). |
 | `src/ai_query.py` | Fallback de lenguaje natural con Claude Haiku. Traduce texto libre → comando. Solo se invoca si el parser de reglas no reconoció el comando y hay `ANTHROPIC_API_KEY`. |
@@ -96,6 +97,7 @@ Los cuatro flags se leen como booleanos de entorno. Para los de seguridad, solo
 | Flag | Default | Leído en | Efecto cuando = 1 |
 |---|---|---|---|
 | `USE_POSTGRES_READS` | `1` (Postgres) | `src/cli.py:65` | `_cargar_datos()` lee los 4 DataFrames desde Postgres (`datos_postgres.py`). Default desde PR-14. `0` fuerza Excel. Si Postgres falla, cae a Excel. |
+| `USE_POSTGRES_WRITES` | `0` (solo Excel) | `src/escritor.py` | `1` = al registrar un trabajo nuevo lo escribe en `chatbot.trabajos` (Postgres) **antes** que en Excel, best-effort (Excel siempre). Resuelve cliente/técnico a id (creándolos). `editar`/`borrar` por id aún no (siguiente PR). |
 | `USE_POSTGRES_SESSIONS` | `0` (archivo) | `src/sesiones.py:19` | Las sesiones multi-turno se guardan/leen en `chatbot.sesiones_bot` (Postgres) en vez de `data/sesiones.json`. Sobrevive redeploys de Railway. |
 | `ENFORCE_TWILIO_SIGNATURE` | `0` (log-only) | `src/seguridad.py:44` | Bloquea con 403 las peticiones cuya firma `X-Twilio-Signature` no valida. Con 0 solo registra que *bloquearía*. |
 | `ENFORCE_WHITELIST` | `0` (log-only) | `src/seguridad.py:48` | Bloquea con 403 los números fuera de `NUMEROS_AUTORIZADOS`. Con 0 solo registra. Si la whitelist está vacía, no filtra a nadie aunque el flag esté en 1. |

@@ -170,3 +170,39 @@ def test_guard_aborta_sin_escribir_si_se_perderian_filas(excel_trabajos):
     despues = _leer(excel_trabajos)
     assert len(despues) == len(antes)
     assert _clientes(despues) == _clientes(antes)
+
+
+# ─── dual write Postgres+Excel (USE_POSTGRES_WRITES) ─────────────────────────
+
+_NUEVO = {
+    "mes": "MAYO", "tecnico": "Tec5", "cliente": "Cliente Nuevo", "domicilio": "Dom N",
+    "telefono": "555", "tipo_trabajo": "Reparacion", "pagado": "1500", "recibe": "R5",
+}
+
+
+def test_dual_write_apagado_no_toca_postgres(excel_trabajos, monkeypatch):
+    """Con USE_POSTGRES_WRITES sin definir (default 0), ni se intenta abrir Postgres."""
+    monkeypatch.delenv("USE_POSTGRES_WRITES", raising=False)
+    import src.db_postgres as dbp
+
+    def _no_llamar(*a, **k):
+        raise AssertionError("no debe tocar Postgres con el flag apagado")
+
+    monkeypatch.setattr(dbp, "get_engine", _no_llamar)
+    resultado = escritor.agregar_trabajo(_NUEVO)
+    assert "registrado correctamente" in resultado
+    assert "Cliente Nuevo" in _clientes(_leer(excel_trabajos))
+
+
+def test_dual_write_cae_a_excel_si_postgres_falla(excel_trabajos, monkeypatch):
+    """Con el flag en 1 pero Postgres caído, el trabajo igual se guarda en Excel."""
+    monkeypatch.setenv("USE_POSTGRES_WRITES", "1")
+    import src.db_postgres as dbp
+
+    def _boom(*a, **k):
+        raise RuntimeError("Postgres caído")
+
+    monkeypatch.setattr(dbp, "get_engine", _boom)
+    resultado = escritor.agregar_trabajo(_NUEVO)
+    assert "registrado correctamente" in resultado          # no propaga la excepción
+    assert "Cliente Nuevo" in _clientes(_leer(excel_trabajos))  # Excel escribió igual
