@@ -206,3 +206,33 @@ def test_dual_write_cae_a_excel_si_postgres_falla(excel_trabajos, monkeypatch):
     resultado = escritor.agregar_trabajo(_NUEVO)
     assert "registrado correctamente" in resultado          # no propaga la excepción
     assert "Cliente Nuevo" in _clientes(_leer(excel_trabajos))  # Excel escribió igual
+
+
+def test_dual_write_encendido_llama_insertar_trabajo(excel_trabajos, monkeypatch):
+    """Integración del wiring (sin Postgres real): con USE_POSTGRES_WRITES=1,
+    agregar_trabajo resuelve cliente/técnico a id y llama a insertar_trabajo."""
+    monkeypatch.setenv("USE_POSTGRES_WRITES", "1")
+
+    # SQLite como stand-in de Postgres, solo con las tablas que usa resolver_o_crear.
+    from sqlalchemy import create_engine, text
+    from sqlalchemy.pool import StaticPool
+    eng = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    with eng.begin() as c:
+        c.execute(text("CREATE TABLE clientes (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT NOT NULL UNIQUE)"))
+        c.execute(text("CREATE TABLE tecnicos (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT NOT NULL UNIQUE)"))
+    import src.db_postgres as dbp
+    monkeypatch.setattr(dbp, "get_engine", lambda *a, **k: eng)
+
+    # Mock de insertar_trabajo (no escribe; registra la llamada).
+    import src.escritor_pg as epg
+    llamadas = []
+    monkeypatch.setattr(epg, "insertar_trabajo", lambda conn, datos: llamadas.append(datos) or 123)
+
+    resultado = escritor.agregar_trabajo(_NUEVO)
+
+    assert "registrado correctamente" in resultado
+    assert len(llamadas) == 1                                # se llamó a insertar_trabajo
+    assert llamadas[0]["cliente_id"] is not None             # cliente resuelto a id
+    assert llamadas[0]["tecnico_id"] is not None             # técnico resuelto a id
+    assert llamadas[0]["tipo_trabajo"] == "Reparacion"
+    assert "Cliente Nuevo" in _clientes(_leer(excel_trabajos))  # Excel también escribió
