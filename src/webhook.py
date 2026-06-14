@@ -227,8 +227,14 @@ def _formatear_para_editar(trabajos_df: pd.DataFrame) -> list[dict]:
         except (TypeError, ValueError):
             pagado_str = ""
 
+        # pg_id: presente solo si los trabajos vienen de Postgres (columna 'id').
+        pg_id = None
+        if "id" in trabajos_df.columns and pd.notna(row["id"]):
+            pg_id = int(row["id"])
+
         resultado.append({
             "indice_real": offset + i,
+            "pg_id":       pg_id,
             "mes":         s(row["mes"]),
             "tecnico":     s(row["tecnico"]),
             "cliente":     s(row["cliente"]),
@@ -329,9 +335,15 @@ async def webhook(request: Request, Body: str = Form(...), From: str = Form(...)
                     datos_completos["indice"],
                     datos_completos["campo"],
                     datos_completos["valor"],
+                    pg_id=datos_completos.get("pg_id"),
+                    clave=datos_completos.get("clave"),
                 )
             elif datos_completos.get("tipo") == "borrar":
-                resultado = borrar_trabajo(datos_completos["indice"])
+                resultado = borrar_trabajo(
+                    datos_completos["indice"],
+                    pg_id=datos_completos.get("pg_id"),
+                    clave=datos_completos.get("clave"),
+                )
             else:
                 resultado = agregar_trabajo(datos_completos)
             _recargar_datos()

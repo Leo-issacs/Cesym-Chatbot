@@ -286,11 +286,16 @@ def _procesar_editar(numero: str, texto: str, sesion: dict) -> tuple[str, dict |
 
     if paso == "confirmando":
         if texto.strip().lower() in ("si", "sí", "s", "yes", "y", "1"):
+            sel = sesion["seleccionado"]
             datos = {
                 "tipo": "editar",
-                "indice": sesion["seleccionado"]["indice_real"],
+                "indice": sel["indice_real"],
                 "campo": sesion["campo"],
                 "valor": sesion["valor_nuevo"],
+                "pg_id": sel.get("pg_id"),
+                "clave": {"cliente": sel.get("cliente", ""),
+                          "tipo_trabajo": sel.get("tipo_trabajo", ""),
+                          "mes": sel.get("mes", "")},
             }
             _sesiones.pop(numero)
             _guardar()
@@ -355,10 +360,15 @@ def _procesar_borrar(numero: str, texto: str, sesion: dict) -> tuple[str, dict |
 
     if paso == "confirmando":
         if texto.strip().lower() in ("si", "sí", "s", "yes", "y", "1"):
+            sel = sesion["seleccionado"]
             datos = {
                 "tipo": "borrar",
-                "indice": sesion["seleccionado"]["indice_real"],
-                "cliente": sesion["seleccionado"]["cliente"],
+                "indice": sel["indice_real"],
+                "cliente": sel["cliente"],
+                "pg_id": sel.get("pg_id"),
+                "clave": {"cliente": sel.get("cliente", ""),
+                          "tipo_trabajo": sel.get("tipo_trabajo", ""),
+                          "mes": sel.get("mes", "")},
             }
             _sesiones.pop(numero)
             _guardar()

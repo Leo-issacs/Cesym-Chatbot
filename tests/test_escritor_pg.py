@@ -123,3 +123,67 @@ def test_resolver_o_crear_tecnico_y_vacio(engine):
         vacio = escritor_pg.resolver_o_crear_tecnico(conn, "   ")
     assert isinstance(tid, int) and tid > 0
     assert vacio is None
+
+
+# ─── 6-8: cableado de editar/borrar por pg_id en escritor.py ─────────────────
+import pandas as pd  # noqa: E402
+import src.escritor as escritor  # noqa: E402
+
+# DataFrame "Excel" vacío con las 10 columnas posicionales (para mockear la lectura).
+_DF_VACIO = pd.DataFrame(columns=[str(i) for i in range(10)])
+
+
+def test_editar_con_pg_id_actualiza_db(engine, monkeypatch):
+    """editar_trabajo con pg_id válido → la fila cambia en la BD (Excel mockeado)."""
+    with engine.begin() as conn:
+        pgid = escritor_pg.insertar_trabajo(conn, {**_DATOS, "pagado": 1000.0})
+    monkeypatch.setenv("USE_POSTGRES_WRITES", "1")
+    import src.db_postgres as dbp
+    monkeypatch.setattr(dbp, "get_engine", lambda *a, **k: engine)
+    monkeypatch.setattr(escritor, "_obtener_o_crear_archivo_trabajos", lambda: None)
+    monkeypatch.setattr(escritor, "_cargar_trabajos", lambda path: (_DF_VACIO.copy(), [], "2", "6"))
+
+    res = escritor.editar_trabajo(0, "pagado", "9999", pg_id=pgid,
+                                  clave={"cliente": "X", "tipo_trabajo": "Y", "mes": "Z"})
+    assert res == "Trabajo actualizado correctamente."
+    with engine.connect() as conn:
+        v = conn.execute(text("SELECT pagado FROM trabajos WHERE id = :i"), {"i": pgid}).scalar()
+    assert v == 9999.0
+
+
+def test_borrar_con_pg_id_elimina_db(engine, monkeypatch):
+    """borrar_trabajo con pg_id válido → la fila desaparece de la BD (Excel mockeado)."""
+    with engine.begin() as conn:
+        pgid = escritor_pg.insertar_trabajo(conn, _DATOS)
+    monkeypatch.setenv("USE_POSTGRES_WRITES", "1")
+    import src.db_postgres as dbp
+    monkeypatch.setattr(dbp, "get_engine", lambda *a, **k: engine)
+    monkeypatch.setattr(escritor, "_obtener_o_crear_archivo_trabajos", lambda: None)
+    monkeypatch.setattr(escritor, "_cargar_trabajos", lambda path: (_DF_VACIO.copy(), [], "2", "6"))
+
+    res = escritor.borrar_trabajo(0, pg_id=pgid,
+                                  clave={"cliente": "X", "tipo_trabajo": "Y", "mes": "Z"})
+    assert "eliminado correctamente" in res
+    with engine.connect() as conn:
+        n = conn.execute(text("SELECT COUNT(*) FROM trabajos WHERE id = :i"), {"i": pgid}).scalar()
+    assert n == 0
+
+
+def test_editar_sin_pg_id_cae_a_posicional(monkeypatch, capsys):
+    """Flag activo pero sin pg_id → edita por índice posicional, loguea aviso, no lanza."""
+    monkeypatch.setenv("USE_POSTGRES_WRITES", "1")
+    df = pd.DataFrame(
+        [["ENERO", "T", "CLI", "R", "D", "TEL", "TIPO", "", "100", "REC"]],
+        columns=[str(i) for i in range(10)],
+    )
+    capturado = {}
+    monkeypatch.setattr(escritor, "_obtener_o_crear_archivo_trabajos", lambda: None)
+    monkeypatch.setattr(escritor, "_cargar_trabajos", lambda path: (df.copy(), [0], "2", "6"))
+    monkeypatch.setattr(escritor, "_persistir_seguro", lambda d, p, n: capturado.update(df=d) or None)
+    monkeypatch.setattr(escritor, "_subir_a_drive", lambda p: None)
+
+    res = escritor.editar_trabajo(0, "pagado", "9999", pg_id=None, clave=None)
+
+    assert res == "Trabajo actualizado correctamente."          # no lanza excepción
+    assert "pg_id no disponible" in capsys.readouterr().out      # logueó el aviso
+    assert capturado["df"].iloc[0, 8] == "9999"                 # editó por posición (col PAGADO)
