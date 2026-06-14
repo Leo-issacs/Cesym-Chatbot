@@ -14,9 +14,11 @@ El flujo de datos es **asimétrico**:
 - La **lectura** tiene dos fuentes posibles (Postgres o Excel), conmutables por flag.
   Desde PR-14 el default es **Postgres** (`USE_POSTGRES_READS=1`), con fallback a
   Excel si la BD falla.
-- La **escritura** tiene una sola ruta: el bot escribe a **Excel → Drive**. No
-  existe ningún camino de escritura del bot hacia Postgres en runtime.
-- La única forma de poblar/refrescar Postgres es un **pipeline offline**
+- La **escritura** va siempre a **Excel → Drive**. Con `USE_POSTGRES_WRITES=1`
+  (default `0`), agregar un trabajo nuevo además lo escribe en `chatbot.trabajos`
+  (best-effort, Excel siempre). El resto de escrituras no toca Postgres.
+- La forma de poblar/refrescar el **grueso** de Postgres sigue siendo un **pipeline
+  offline**
   (`cargar_bd.py` → `migrar_sqlite_a_postgres.py`). Funciona, pero requiere las
   deps de ETL (`requirements-etl.txt`) y correrse a mano.
 
@@ -119,15 +121,23 @@ Cumple las reglas del proyecto: nunca borra registros sin confirmación (flujo d
 sesión con "si/no"), siempre hace backup antes, y no toca el Excel original *in
 place* sin respaldo.
 
-### 2.2 No hay escritura a Postgres en runtime
+### 2.2 Escritura a Postgres en runtime (parcial, detrás de flag)
 
-`escritor.py` solo conoce Excel y Drive. **Ningún módulo del runtime escribe
-datos de negocio a Postgres.** Lo único que el bot escribe a Postgres es el
-**estado de sesiones** (`sesiones_pg.py`, si `USE_POSTGRES_SESSIONS=1`) — y eso
-no son datos de cartera/trabajos, es estado conversacional efímero.
+Por defecto, `escritor.py` solo escribe a Excel y Drive. Con
+**`USE_POSTGRES_WRITES=1`** (default `0`), al registrar un **trabajo nuevo** el bot
+lo escribe también en `chatbot.trabajos` (vía `escritor_pg.py`), **antes** que el
+Excel y best-effort: si Postgres falla, sigue solo con Excel. Resuelve el
+cliente/técnico a su id (creándolos si no existen).
 
-Por tanto Postgres, en lo que respecta a datos de negocio, es **solo de lectura**
-desde la perspectiva del bot. Se puebla exclusivamente por el pipeline offline.
+Limitaciones actuales de esta ruta:
+- Solo cubre **agregar** trabajo. `editar`/`borrar` siguen operando por índice
+  posicional sobre el Excel (el fix por `pg_id` —que elimina el race condition—
+  va en un PR siguiente, porque requiere que la lectura traiga `t.id`).
+- Las **demás** escrituras (facturas, cartera) siguen sin camino a Postgres.
+- El **estado de sesiones** va aparte (`sesiones_pg.py`, si `USE_POSTGRES_SESSIONS=1`).
+
+Con el flag apagado, Postgres sigue siendo **solo de lectura** para datos de
+negocio, poblado por el pipeline offline.
 
 ---
 
