@@ -121,6 +121,46 @@ def _persistir_seguro(df: pd.DataFrame, path: Path, filas_esperadas: int) -> str
     return None
 
 
+def _escribir_trabajo_postgres(datos: dict) -> None:
+    """
+    Dual write: si USE_POSTGRES_WRITES=1, escribe el trabajo en chatbot.trabajos.
+
+    Best-effort: ante cualquier error (sin DATABASE_URL, BD caída, etc.) loguea y
+    deja que el flujo siga — el Excel lo escribe SIEMPRE el caller, sea cual sea el
+    resultado de esta función. Postgres se escribe ANTES que el Excel.
+
+    Resuelve los nombres de cliente/técnico a sus ids (creándolos si no existen),
+    porque chatbot.trabajos referencia por FK.
+    """
+    import os
+    if os.getenv("USE_POSTGRES_WRITES", "0") != "1":
+        return
+    try:
+        from sqlalchemy import text
+        from src.db_postgres import get_engine, SCHEMA
+        from src import escritor_pg
+
+        pago = datos.get("pagado")
+        engine = get_engine()
+        with engine.begin() as conn:
+            conn.execute(text(f"SET search_path TO {SCHEMA}"))
+            fila_pg = {
+                "mes":          (datos.get("mes") or "").strip().upper() or None,
+                "tecnico_id":   escritor_pg.resolver_o_crear_tecnico(conn, datos.get("tecnico", "")),
+                "cliente_id":   escritor_pg.resolver_o_crear_cliente(conn, datos.get("cliente", "")),
+                "rep_num":      (datos.get("rep_num") or "").strip() or None,
+                "domicilio":    (datos.get("domicilio") or "").strip() or None,
+                "telefono":     (datos.get("telefono") or "").strip() or None,
+                "tipo_trabajo": (datos.get("tipo_trabajo") or "").strip() or None,
+                "pagado":       float(pago) if pago not in (None, "") else None,
+                "recibe":       (datos.get("recibe") or "").strip() or None,
+            }
+            pg_id = escritor_pg.insertar_trabajo(conn, fila_pg)
+        print(f"[escritor_pg] Trabajo escrito en Postgres (id={pg_id}).", flush=True)
+    except Exception as e:
+        print(f"[escritor_pg] INSERT en Postgres falló, solo Excel: {e}", flush=True)
+
+
 def agregar_trabajo(datos: dict) -> str:
     """
     Agrega una fila al Excel de control de trabajos, hace backup y sube a Drive.
@@ -152,6 +192,9 @@ def agregar_trabajo(datos: dict) -> str:
     }
 
     df = pd.concat([df, pd.DataFrame([nueva_fila])], ignore_index=True)
+
+    # Dual write: Postgres primero (best-effort), Excel siempre.
+    _escribir_trabajo_postgres(datos)
 
     error = _persistir_seguro(df, path, filas_originales + 1)
     if error:
