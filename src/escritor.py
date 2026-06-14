@@ -121,6 +121,12 @@ def _persistir_seguro(df: pd.DataFrame, path: Path, filas_esperadas: int) -> str
     return None
 
 
+def _postgres_writes_activo() -> bool:
+    """USE_POSTGRES_WRITES=1 → el bot escribe trabajos también en Postgres."""
+    import os
+    return os.getenv("USE_POSTGRES_WRITES", "0") == "1"
+
+
 def _escribir_trabajo_postgres(datos: dict) -> None:
     """
     Dual write: si USE_POSTGRES_WRITES=1, escribe el trabajo en chatbot.trabajos.
@@ -132,8 +138,7 @@ def _escribir_trabajo_postgres(datos: dict) -> None:
     Resuelve los nombres de cliente/técnico a sus ids (creándolos si no existen),
     porque chatbot.trabajos referencia por FK.
     """
-    import os
-    if os.getenv("USE_POSTGRES_WRITES", "0") != "1":
+    if not _postgres_writes_activo():
         return
     try:
         from sqlalchemy import text
@@ -237,21 +242,92 @@ def _subir_a_drive(path: Path) -> str | None:
         )
 
 
-def borrar_trabajo(indice: int) -> str:
+# ─── Edición/borrado por pg_id (clave estable, elimina el race posicional) ────
+
+def _conexion_pg(accion):
+    """Abre una transacción Postgres con search_path al schema chatbot y ejecuta
+    `accion(conn)`. Best-effort: loguea y traga cualquier error (Excel es la red).
+    En SQLite (tests) no fija search_path: usa las tablas desnudas."""
+    try:
+        from sqlalchemy import text
+        from src.db_postgres import get_engine, SCHEMA
+        engine = get_engine()
+        with engine.begin() as conn:
+            if conn.dialect.name == "postgresql":
+                conn.execute(text(f"SET search_path TO {SCHEMA}"))
+            accion(conn)
+        return True
+    except Exception as e:
+        print(f"[escritor_pg] operación en Postgres falló: {e}", flush=True)
+        return False
+
+
+def _campo_a_columna_pg(conn, campo: str, valor: str) -> dict:
+    """Traduce (campo del bot, valor) a la columna/valor de chatbot.trabajos.
+    cliente/tecnico se resuelven a su id (creándolos); pagado a float; mes a upper."""
+    from src import escritor_pg
+    if campo == "cliente":
+        return {"cliente_id": escritor_pg.resolver_o_crear_cliente(conn, valor)}
+    if campo == "tecnico":
+        return {"tecnico_id": escritor_pg.resolver_o_crear_tecnico(conn, valor)}
+    if campo == "pagado":
+        return {"pagado": float(valor) if valor else None}
+    if campo == "mes":
+        return {"mes": (valor or "").strip().upper() or None}
+    return {campo: valor or None}  # domicilio, telefono, tipo_trabajo, recibe
+
+
+def _buscar_fila_por_clave(df, indices_visibles, clave: dict):
+    """Ubica la fila del Excel por la clave natural (cliente+tipo_trabajo+mes,
+    normalizados), sin depender de la posición. Devuelve la etiqueta si el match
+    es ÚNICO; None si no hay match o es ambiguo."""
+    def norm(v):
+        return str(v or "").strip().upper()
+    cli, tipo, mes = norm(clave.get("cliente")), norm(clave.get("tipo_trabajo")), norm(clave.get("mes"))
+    col_mes, col_cli, col_tipo = df.columns[0], df.columns[2], df.columns[6]
+    candidatos = [
+        idx for idx in indices_visibles
+        if norm(df.at[idx, col_cli]) == cli
+        and norm(df.at[idx, col_tipo]) == tipo
+        and norm(df.at[idx, col_mes]) == mes
+    ]
+    return candidatos[0] if len(candidatos) == 1 else None
+
+
+def _localizar_idx_excel(df, indices_visibles, indice, clave, usar_pg):
+    """Etiqueta de la fila del Excel a tocar: por clave natural si usamos pg_id,
+    o por índice posicional (comportamiento histórico) si no. None si no se ubica."""
+    if usar_pg and clave:
+        return _buscar_fila_por_clave(df, indices_visibles, clave)
+    if _postgres_writes_activo():  # flag activo pero sin pg_id → degradado, avisar
+        print("[escritor] pg_id no disponible, usando índice posicional (fallback).", flush=True)
+    if indice is None or indice < 0 or indice >= len(indices_visibles):
+        return None
+    return indices_visibles[indice]
+
+
+def borrar_trabajo(indice: int, pg_id: int | None = None, clave: dict | None = None) -> str:
     """
-    Elimina un trabajo del Excel por su índice en la vista que muestra el bot.
-    Conserva el resto de las filas (incluidas las parciales) en su posición.
-    Hace backup antes de modificar y sube a Drive.
+    Elimina un trabajo. Con USE_POSTGRES_WRITES=1 y pg_id, borra en Postgres por id
+    (clave estable, sin race) y luego ubica la fila del Excel por clave natural.
+    Sin pg_id, cae al borrado por índice posicional (comportamiento histórico).
     """
+    usar_pg = _postgres_writes_activo() and pg_id is not None
+    if usar_pg:
+        from src import escritor_pg
+        _conexion_pg(lambda conn: escritor_pg.borrar_trabajo(conn, pg_id))
+
     path = _obtener_o_crear_archivo_trabajos()
     df, indices_visibles, cliente_col, _ = _cargar_trabajos(path)
     filas_originales = len(df)
 
-    if indice < 0 or indice >= len(indices_visibles):
+    idx_real = _localizar_idx_excel(df, indices_visibles, indice, clave, usar_pg)
+    if idx_real is None:
+        if usar_pg:
+            print("[escritor] Excel: fila no ubicada por clave; Postgres ya borró.", flush=True)
+            return f"Trabajo de '{(clave or {}).get('cliente', '')}' eliminado correctamente."
         return "Error: trabajo no encontrado."
 
-    # Mapear el índice visible al índice real y borrar SOLO esa fila del df completo.
-    idx_real = indices_visibles[indice]
     cliente = df.at[idx_real, cliente_col]
     df = df.drop(index=idx_real)
 
@@ -266,29 +342,36 @@ def borrar_trabajo(indice: int) -> str:
     return f"Trabajo de '{cliente}' eliminado correctamente."
 
 
-def editar_trabajo(indice: int, campo: str, valor: str) -> str:
+def editar_trabajo(indice: int, campo: str, valor: str,
+                   pg_id: int | None = None, clave: dict | None = None) -> str:
     """
-    Modifica un campo de un trabajo existente en el Excel.
+    Modifica un campo de un trabajo. Con USE_POSTGRES_WRITES=1 y pg_id, actualiza
+    en Postgres por id (clave estable, sin race) y luego ubica la fila del Excel
+    por clave natural. Sin pg_id, edita por índice posicional (histórico).
 
-    indice: posición 0-based en el DataFrame limpio (mismo orden que muestra el bot)
-    campo:  nombre del campo (mes, tecnico, cliente, domicilio, telefono,
-                              tipo_trabajo, pagado, recibe)
-    valor:  nuevo valor como string (vacío string = borrar el campo)
-
-    Retorna mensaje de resultado.
+    campo: mes, tecnico, cliente, domicilio, telefono, tipo_trabajo, pagado, recibe
+    valor: nuevo valor como string (vacío = borrar el campo)
     """
     col_idx = _CAMPO_A_COLUMNA_IDX.get(campo)
     if col_idx is None:
         return f"Campo '{campo}' no reconocido."
 
+    usar_pg = _postgres_writes_activo() and pg_id is not None
+    if usar_pg:
+        from src import escritor_pg
+        _conexion_pg(lambda conn: escritor_pg.actualizar_trabajo(
+            conn, pg_id, _campo_a_columna_pg(conn, campo, valor)))
+
     path = _obtener_o_crear_archivo_trabajos()
     df, indices_visibles, _, _ = _cargar_trabajos(path)
 
-    if indice < 0 or indice >= len(indices_visibles):
+    idx_real = _localizar_idx_excel(df, indices_visibles, indice, clave, usar_pg)
+    if idx_real is None:
+        if usar_pg:
+            print("[escritor] Excel: fila no ubicada por clave; Postgres ya actualizó.", flush=True)
+            return "Trabajo actualizado correctamente."
         return "Error: trabajo no encontrado."
 
-    # Editar la celda en el df completo (la edición no cambia el número de filas).
-    idx_real = indices_visibles[indice]
     col_name = df.columns[col_idx]
     df.at[idx_real, col_name] = valor if valor else None
 
