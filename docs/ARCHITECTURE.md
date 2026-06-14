@@ -83,7 +83,7 @@ se importa en producción por sus helpers — ver abajo).
 ### 3.3 `src/db.py` (SQLite) — fuera del runtime del bot
 
 Define el esquema SQLite y utilidades de conexión. Lo usa solo `scripts/cargar_bd.py`.
-El bot en runtime **no** toca SQLite: lee de Excel (default) o de Postgres (flag).
+El bot en runtime **no** toca SQLite: lee de Postgres (default) o de Excel (`USE_POSTGRES_READS=0`).
 SQLite es únicamente un paso intermedio del ETL y la red de seguridad de la migración.
 
 ---
@@ -95,7 +95,7 @@ Los cuatro flags se leen como booleanos de entorno. Para los de seguridad, solo
 
 | Flag | Default | Leído en | Efecto cuando = 1 |
 |---|---|---|---|
-| `USE_POSTGRES_READS` | `0` (Excel) | `src/cli.py:65` | `_cargar_datos()` lee los 4 DataFrames desde Postgres (`datos_postgres.py`) en vez de Excel. Si falla, cae a Excel como fallback. |
+| `USE_POSTGRES_READS` | `1` (Postgres) | `src/cli.py:65` | `_cargar_datos()` lee los 4 DataFrames desde Postgres (`datos_postgres.py`). Default desde PR-14. `0` fuerza Excel. Si Postgres falla, cae a Excel. |
 | `USE_POSTGRES_SESSIONS` | `0` (archivo) | `src/sesiones.py:19` | Las sesiones multi-turno se guardan/leen en `chatbot.sesiones_bot` (Postgres) en vez de `data/sesiones.json`. Sobrevive redeploys de Railway. |
 | `ENFORCE_TWILIO_SIGNATURE` | `0` (log-only) | `src/seguridad.py:44` | Bloquea con 403 las peticiones cuya firma `X-Twilio-Signature` no valida. Con 0 solo registra que *bloquearía*. |
 | `ENFORCE_WHITELIST` | `0` (log-only) | `src/seguridad.py:48` | Bloquea con 403 los números fuera de `NUMEROS_AUTORIZADOS`. Con 0 solo registra. Si la whitelist está vacía, no filtra a nadie aunque el flag esté en 1. |
@@ -105,9 +105,11 @@ stdout (logs de Railway) cuando algo no pasaría, pero no bloquean hasta activar
 flag. Permite observar durante días que no se rechazan mensajes legítimos antes de
 prender el enforcement real.
 
-**Postura actual (lo que está prendido en producción):** los cuatro están en su
-default (`0`). El bot lee de Excel, guarda sesiones en archivo y la seguridad está
-en observación. La capa Postgres existe pero está dormida.
+**Postura actual (lo que está prendido en producción):** `USE_POSTGRES_READS=1`
+por defecto (PR-14) — el bot lee de **Postgres**, con fallback a Excel si la BD
+falla; la equivalencia de salida está respaldada por el golden master
+(`tests/test_equivalencia_postgres.py`). Los otros tres siguen en su default `0`:
+sesiones en archivo y la seguridad en observación (log-only).
 
 ---
 

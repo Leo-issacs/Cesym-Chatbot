@@ -21,8 +21,9 @@ COLUMNAS DE SALIDA:
                    tipo_trabajo, pagado, recibe
 
 ACTIVACIÓN:
-  Este módulo solo se usa cuando USE_POSTGRES_READS=1.
-  Con USE_POSTGRES_READS=0 (default) el bot sigue leyendo desde Excel.
+  Este módulo se usa cuando USE_POSTGRES_READS=1, que es el DEFAULT desde PR-14.
+  Con USE_POSTGRES_READS=0 se fuerza la lectura desde Excel. Si la lectura de
+  Postgres falla, cli._cargar_datos cae a Excel automáticamente.
 """
 
 import pandas as pd

@@ -11,25 +11,27 @@ Ver también [ARCHITECTURE.md](./ARCHITECTURE.md).
 
 El flujo de datos es **asimétrico**:
 
-- La **lectura** tiene dos fuentes posibles (Excel o Postgres), conmutables por flag.
+- La **lectura** tiene dos fuentes posibles (Postgres o Excel), conmutables por flag.
+  Desde PR-14 el default es **Postgres** (`USE_POSTGRES_READS=1`), con fallback a
+  Excel si la BD falla.
 - La **escritura** tiene una sola ruta: el bot escribe a **Excel → Drive**. No
   existe ningún camino de escritura del bot hacia Postgres en runtime.
 - La única forma de poblar/refrescar Postgres es un **pipeline offline**
   (`cargar_bd.py` → `migrar_sqlite_a_postgres.py`). Funciona, pero requiere las
   deps de ETL (`requirements-etl.txt`) y correrse a mano.
 
-Consecuencia: si algún día se activa `USE_POSTGRES_READS=1`, los trabajos que el
-bot agregue (que van a Excel) **no aparecerán** en Postgres hasta correr ese ETL
-manual. La asimetría sigue (el bot escribe a Excel, no a Postgres); lo que se
-arregló es que el ETL de refresco vuelve a funcionar.
+Consecuencia (con `USE_POSTGRES_READS=1`, ya el default): los trabajos que el bot
+agregue van a **Excel**, no a Postgres, así que **no se reflejan** en lo que el bot
+lee hasta correr el ETL manual de refresco. La asimetría sigue (el bot escribe a
+Excel, lee de Postgres). Mantén el ETL al día o un cambio reciente no se verá.
 
 ```
                     ┌──────────────────────────────────────┐
-   LECTURA (hoy)    │  Excel (data/raw/) → loader → cleaner │──► 4 DataFrames ──► query_engine
+   LECTURA (default)│  Postgres chatbot.* → datos_postgres │──► 4 DataFrames ──► query_engine
                     └──────────────────────────────────────┘        en memoria
                     ┌──────────────────────────────────────┐
-   LECTURA (flag)   │  Postgres chatbot.* → datos_postgres │──► 4 DataFrames ──► query_engine
-                    └──────────────────────────────────────┘   (mismas columnas)
+   LECTURA (flag=0  │  Excel (data/raw/) → loader → cleaner │──► 4 DataFrames ──► query_engine
+    o fallback)     └──────────────────────────────────────┘   (mismas columnas)
 
    ESCRITURA        escritor.py ──► Excel local ──► backup ──► Google Drive
    (única ruta)     (NO hay camino a Postgres)
@@ -42,9 +44,10 @@ arregló es que el ETL de refresco vuelve a funcionar.
 
 ## 1. LECTURA
 
-### 1.1 Camino por defecto: Excel → memoria
+### 1.1 Camino Excel → memoria (`USE_POSTGRES_READS=0`, o fallback)
 
-`USE_POSTGRES_READS=0` (default). En `src/cli.py:_cargar_datos()`:
+Con `USE_POSTGRES_READS=0` (o cuando la lectura de Postgres falla, como fallback).
+En `src/cli.py:_cargar_datos()`:
 
 1. `loader.py` abre los Excel de `data/raw/` **sin modificarlos** y devuelve RAW:
    - `load_facturado()` → hoja `OC FACTURADO` (detecta encabezado buscando `FACTURA`).
@@ -60,9 +63,9 @@ arregló es que el ETL de refresco vuelve a funcionar.
 La fuente de verdad en este modo son los **archivos Excel** (sincronizados desde
 Drive). Todo se recalcula en memoria en cada `actualizar`/sync; no hay BD.
 
-### 1.2 Camino alternativo: Postgres → memoria (apagado)
+### 1.2 Camino Postgres → memoria (default desde PR-14)
 
-`USE_POSTGRES_READS=1`. `_cargar_datos()` delega en
+`USE_POSTGRES_READS=1` (default). `_cargar_datos()` delega en
 `datos_postgres.cargar_datos_desde_postgres()`, que ejecuta 4 SELECT sobre el
 schema `chatbot` y devuelve los DataFrames. Si algo falla, **cae a Excel**.
 
@@ -166,8 +169,8 @@ forma de regenerar `data/cesym.db`.
 
 ### 3.2 Por qué esto importa para la migración
 
-El modo Postgres (`USE_POSTGRES_READS=1`) se diseñó como el futuro "fuente de
-verdad". Consideraciones que siguen vigentes:
+El modo Postgres (`USE_POSTGRES_READS=1`) es desde PR-14 la fuente de lectura por
+defecto. Consideraciones que siguen vigentes y exigen disciplina operativa:
 
 - El refresco es **manual**: hay que correr el ETL tras cambiar los Excel.
 - `migrar_sqlite_a_postgres.py` usa `ON CONFLICT DO NOTHING`: **inserta** filas
@@ -176,8 +179,10 @@ verdad". Consideraciones que siguen vigentes:
 - Cualquier trabajo que el bot agregue va a **Excel**, no a Postgres → divergencia
   con lo que se leería en modo Postgres hasta el siguiente ETL.
 
-Por eso los flags siguen en `0`: la cadena de refresco ya funciona, pero la
-migración como "fuente de verdad" aún no es de cero-toque.
+Con Postgres ya como default de lectura, **la disciplina del ETL es crítica**: si
+los Excel cambian y no se corre el refresco, el bot servirá datos viejos sin error
+(el fallback a Excel solo cubre caídas de conexión, no datos stale). Cerrar esto a
+cero-toque (escritura bot→Postgres o ETL automático) queda para más adelante.
 
 ### 3.3 Cómo refrescar Postgres hoy
 
