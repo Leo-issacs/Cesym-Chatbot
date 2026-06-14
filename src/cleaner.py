@@ -262,7 +262,7 @@ def clean_trabajos(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
     df = df[df["cliente"].notna() & df["tipo_trabajo"].notna()].copy()
 
     # --- Conversión de tipos ---
-    df["mes"] = df["mes"].astype(str).str.strip().str.upper().replace("NAN", "")
+    df["mes"] = df["mes"].fillna("").astype(str).str.strip().str.upper()
     df["tecnico"] = df["tecnico"].fillna("").astype(str).str.strip()
     df["cliente"] = df["cliente"].fillna("").astype(str).str.strip().str.upper()
     df["rep_num"] = df["rep_num"].fillna("").astype(str).str.strip()
