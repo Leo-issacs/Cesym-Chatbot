@@ -17,8 +17,12 @@ COLUMNAS DE SALIDA:
   facturado      → factura, oc, monto_actual, prioridad, fecha, estado
   pendiente      → cot, suc, importe, concepto
   facturas_mensual → folio, cliente, fecha, concepto, total, fecha_pago
-  trabajos       → mes, tecnico, cliente, rep_num, domicilio, telefono,
+  trabajos       → id, mes, tecnico, cliente, rep_num, domicilio, telefono,
                    tipo_trabajo, pagado, recibe
+
+  (trabajos lleva una columna EXTRA `id` —el pg_id de chatbot.trabajos— que
+   query_engine.py ignora; se usa solo para editar/borrar por clave estable.
+   La ruta Excel/cleaner no la produce, así que puede no estar presente.)
 
 ACTIVACIÓN:
   Este módulo se usa cuando USE_POSTGRES_READS=1, que es el DEFAULT desde PR-14.
@@ -77,6 +81,7 @@ ORDER BY f.folio;
 
 _SQL_TRABAJOS = f"""
 SELECT
+    t.id,
     t.mes,
     tec.nombre      AS tecnico,
     c.nombre        AS cliente,
