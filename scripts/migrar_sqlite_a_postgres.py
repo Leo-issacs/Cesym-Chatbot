@@ -34,6 +34,7 @@ CUÁNDO BORRAR EL SQLITE:
   lleve semanas operativo sin problemas y tengas backups automáticos activos.
 """
 
+import argparse
 import sys
 import sqlite3
 from datetime import datetime
@@ -149,11 +150,12 @@ def migrar_tecnicos(sqlite_conn, pg_engine) -> tuple[int, int]:
     return len(filas), nuevas
 
 
-def migrar_facturas(sqlite_conn, pg_engine) -> tuple[int, int]:
+def migrar_facturas(sqlite_conn, pg_engine, modo: str = "upsert") -> tuple[int, int]:
     """
-    Inserta facturas.
-    Idempotente por ON CONFLICT (folio) — el folio es la clave de negocio única.
-    Los IDs de cliente apuntan a los mismos IDs que ya migramos.
+    Inserta/actualiza facturas (UPSERT por folio).
+    El folio es la clave de negocio única, así que ON CONFLICT (folio) DO UPDATE
+    propaga los cambios de registros ya migrados (p.ej. una fecha_pago nueva) al
+    re-correr el ETL. Los IDs de cliente apuntan a los mismos IDs ya migrados.
 
     NOTA: Las fechas en SQLite son TEXT ('YYYY-MM-DD'); Postgres las acepta
     directamente en columnas DATE si tienen ese formato.
@@ -168,6 +170,19 @@ def migrar_facturas(sqlite_conn, pg_engine) -> tuple[int, int]:
     if not filas:
         return 0, 0
 
+    # modo 'upsert' (default): actualiza si el folio ya existe.
+    # modo 'insertar': comportamiento anterior (omite si ya existe).
+    if modo == "upsert":
+        conflicto = """ON CONFLICT (folio) DO UPDATE SET
+                        cliente_id    = EXCLUDED.cliente_id,
+                        fecha_emision = EXCLUDED.fecha_emision,
+                        concepto      = EXCLUDED.concepto,
+                        total         = EXCLUDED.total,
+                        fecha_pago    = EXCLUDED.fecha_pago,
+                        cancelada     = EXCLUDED.cancelada"""
+    else:
+        conflicto = "ON CONFLICT (folio) DO NOTHING"
+
     nuevas = 0
     with pg_engine.connect() as conn:
         for f in filas:
@@ -180,7 +195,7 @@ def migrar_facturas(sqlite_conn, pg_engine) -> tuple[int, int]:
                     VALUES
                         (:id, :folio, :cliente_id, CAST(:fecha_emision AS DATE),
                          :concepto, :total, CAST(:fecha_pago AS DATE), :cancelada)
-                    ON CONFLICT (folio) DO NOTHING
+                    {conflicto}
                     """
                 ),
                 {
@@ -345,6 +360,16 @@ def imprimir_reporte(
 # ─── Pipeline principal ────────────────────────────────────────────────────────
 
 def main():
+    parser = argparse.ArgumentParser(
+        description="Migra data/cesym.db al schema chatbot de PostgreSQL."
+    )
+    parser.add_argument(
+        "--modo", choices=["upsert", "insertar"], default="upsert",
+        help="upsert (default): facturas se actualizan si el folio ya existe. "
+             "insertar: comportamiento anterior (DO NOTHING en facturas).",
+    )
+    modo = parser.parse_args().modo
+
     inicio = datetime.now()
 
     print()
@@ -352,6 +377,11 @@ def main():
     print("  MIGRACIÓN SQLite → PostgreSQL — CESYM CHATBOT")
     print("  NO se modifica ni borra el SQLite original.")
     print("=" * 62)
+    if modo == "upsert":
+        print("  [MODO] upsert — facturas se actualizan si ya existen "
+              "(OC y catálogos: DO NOTHING)")
+    else:
+        print("  [MODO] insertar — solo inserta filas nuevas (DO NOTHING en todo)")
 
     # ── Paso 1: Conectar a SQLite ────────────────────────────────
     print()
@@ -381,8 +411,8 @@ def main():
     print(f"     {resultados['tecnicos'][0]} origen | {resultados['tecnicos'][1]} nuevas")
 
     print("  → facturas...")
-    resultados["facturas"] = migrar_facturas(sqlite_conn, pg_engine)
-    print(f"     {resultados['facturas'][0]} origen | {resultados['facturas'][1]} nuevas")
+    resultados["facturas"] = migrar_facturas(sqlite_conn, pg_engine, modo)
+    print(f"     {resultados['facturas'][0]} origen | {resultados['facturas'][1]} afectadas")
 
     print("  → ordenes_compra...")
     resultados["ordenes_compra"] = migrar_ordenes_compra(sqlite_conn, pg_engine)
