@@ -69,7 +69,10 @@ def _cargar_datos() -> tuple:
     if os.getenv("USE_POSTGRES_READS", "1") == "1":
         try:
             from src.datos_postgres import cargar_datos_desde_postgres
-            return cargar_datos_desde_postgres()
+            datos = cargar_datos_desde_postgres()
+            if datos is not None:
+                return datos
+            # datos is None → la conexión a Postgres falló; cae a Excel abajo.
         except Exception as e:
             print(f"[datos_postgres] Error leyendo de Postgres, usando Excel como fallback: {e}")
 
