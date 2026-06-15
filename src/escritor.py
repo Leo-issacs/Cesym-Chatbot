@@ -116,8 +116,12 @@ def _persistir_seguro(df: pd.DataFrame, path: Path, filas_esperadas: int) -> str
     """
     if len(df) != filas_esperadas:
         return _MSG_ABORTO_GUARDIA
-    _hacer_backup(path)
-    df.to_excel(path, index=False)
+    try:
+        _hacer_backup(path)
+        df.to_excel(path, index=False)
+    except PermissionError:
+        return ("No se pudo guardar: el archivo Excel está abierto en otro "
+                "programa. Ciérralo e intenta de nuevo.")
     return None
 
 
