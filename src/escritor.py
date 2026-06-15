@@ -148,7 +148,8 @@ def _escribir_trabajo_postgres(datos: dict) -> None:
         pago = datos.get("pagado")
         engine = get_engine()
         with engine.begin() as conn:
-            conn.execute(text(f"SET search_path TO {SCHEMA}"))
+            if conn.dialect.name == "postgresql":
+                conn.execute(text(f"SET search_path TO {SCHEMA}"))
             fila_pg = {
                 "mes":          (datos.get("mes") or "").strip().upper() or None,
                 "tecnico_id":   escritor_pg.resolver_o_crear_tecnico(conn, datos.get("tecnico", "")),

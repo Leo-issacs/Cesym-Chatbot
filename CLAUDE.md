@@ -164,7 +164,7 @@ Plantilla completa en `.env.example`. En local se cargan desde `.env`
 | `DATABASE_URL` | — | `db_postgres.py` | Conexión runtime a Postgres (Supabase: pooler 6543). |
 | `DATABASE_MIGRATION_URL` | = `DATABASE_URL` | `db_postgres.py` | DDL/migraciones (Supabase: directo 5432). |
 | `USE_POSTGRES_READS` | `1` | `cli.py` | `1` (default) = lee de Postgres; `0` = fuerza Excel. Cae a Excel si Postgres falla. |
-| `USE_POSTGRES_WRITES` | `0` | `escritor.py` | `1` = escribe trabajos nuevos en Postgres (`chatbot.trabajos`) además del Excel (best-effort, Excel siempre). `0` = solo Excel. |
+| `USE_POSTGRES_WRITES` | `0` (código); **`1` en Railway** | `escritor.py` | `1` = escribe trabajos nuevos en Postgres (`chatbot.trabajos`) además del Excel (best-effort, Excel siempre). `0` = solo Excel. **Activo en producción desde 2026-06-15.** Rollback: poner `0` en Railway (ver `docs/runbooks/rollback-dual-write.md`). |
 | `USE_POSTGRES_SESSIONS` | `0` | `sesiones.py` | `1` = sesiones en `chatbot.sesiones_bot` en vez de JSON. |
 | `DRIVE_FOLDER_ID` | — | `cli`, `webhook`, `escritor`, `logger`, `sesiones` | Carpeta de Drive con los Excel. Sin esto, no hay sync. |
 | `DRIVE_BACKUPS_FOLDER_ID` | — | `escritor.py` | Carpeta de Drive para backups de Excel. |
