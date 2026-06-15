@@ -365,6 +365,13 @@ def _construir_datos_reporte(
     """Calcula todos los KPIs y datos de gráficas listos para inyectar en el HTML."""
     hoy = datetime.now()
 
+    # Postgres devuelve fechas como datetime.date; normalizar a Timestamp para
+    # poder compararlas con pd.Timestamp (hace_7, inicio_mes, hace_180).
+    for df, cols in [(df_fac, ["fecha"]), (df_men, ["fecha", "fecha_pago"])]:
+        for col in cols:
+            if col in df.columns:
+                df[col] = pd.to_datetime(df[col], errors="coerce")
+
     # Filtrar por periodo solo para KPIs — las gráficas usan el historial completo
     df_fac_kpi = df_fac.copy()
     df_men_kpi = df_men.copy()
@@ -563,6 +570,11 @@ def generar_pdf(periodo: str = "mensual") -> Path:
     Retorna la ruta al archivo generado.
     """
     df_fac, df_pen, df_men, df_tra = _cargar_datos()
+    # Postgres devuelve fechas como datetime.date; normalizar a Timestamp (hace_60).
+    for df, cols in [(df_fac, ["fecha"]), (df_men, ["fecha", "fecha_pago"])]:
+        for col in cols:
+            if col in df.columns:
+                df[col] = pd.to_datetime(df[col], errors="coerce")
     estilos = _estilos()
 
     reportes_dir = Path(__file__).parent.parent / "data" / "reportes"
