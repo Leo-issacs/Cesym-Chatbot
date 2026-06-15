@@ -23,6 +23,8 @@
   cobradas                 → Facturas con fecha de pago
   sin cobrar               → Facturas sin fecha de pago
   buscar cliente [nombre]  → Facturas de un cliente
+  debe [cliente]           → Facturas pendientes de ese cliente
+  pagos [cliente] [N]      → Pagos del cliente en últimos N meses (default 1)
 
   CRUCE
   ─────

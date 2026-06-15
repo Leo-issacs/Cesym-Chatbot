@@ -79,10 +79,54 @@ def run_query(
     if verbo == "errores":
         return _errores(facturado, pendiente)
 
+    # "debe CLIENTE" → facturas pendientes de ese cliente
+    if verbo == "debe" and len(partes) >= 2:
+        return _deuda_cliente(" ".join(partes[1:]), facturas)
+
+    # "pagos CLIENTE" o "pagos CLIENTE N" (N = meses, default 1)
+    if verbo == "pagos" and len(partes) >= 2:
+        if partes[-1].isdigit():
+            meses, cliente = int(partes[-1]), " ".join(partes[1:-1])
+        else:
+            meses, cliente = 1, " ".join(partes[1:])
+        if cliente:
+            return _pagos_cliente(cliente, meses, facturas)
+
+    # Alias naturales: "cuánto debe X" / "cuánto nos debe X" / "cuánto pagó X N"
+    if verbo in ("cuánto", "cuanto") and len(partes) >= 3:
+        if "debe" in partes[1:3]:
+            cliente = " ".join(partes[partes.index("debe") + 1:])
+            if cliente:
+                return _deuda_cliente(cliente, facturas)
+        if partes[1] in ("pagó", "pago", "ha"):
+            _RELLENO = ("ha", "pagado", "pagó", "pago", "en", "meses", "mes")
+            toks = [t for t in partes[2:] if t not in _RELLENO]
+            nums = [t for t in toks if t.isdigit()]
+            meses = int(nums[-1]) if nums else 1
+            cliente = " ".join(t for t in toks if not t.isdigit())
+            if cliente:
+                return _pagos_cliente(cliente, meses, facturas)
+
     return (
         f"Comando no reconocido: '{cmd}'.\n"
         "Escribe 'ayuda' para ver los comandos disponibles."
     )
+
+
+def _mask_cliente(col: pd.Series, q: str) -> pd.Series:
+    """
+    Máscara de búsqueda de cliente en dos pasos (q ya en MAYÚSCULAS):
+      1. Substring case-insensitive.
+      2. Fuzzy fallback con difflib si el paso 1 no encontró nada
+         (el ETL normaliza nombres; el usuario puede escribir una variante).
+    """
+    from difflib import get_close_matches
+    mask = col.str.upper().str.contains(q, na=False)
+    if mask.any():
+        return mask
+    unicos = [c for c in col.str.upper().dropna().unique() if c]
+    cercanos = get_close_matches(q, unicos, n=5, cutoff=0.75)
+    return col.str.upper().isin(cercanos)
 
 
 # ─── Comandos ─────────────────────────────────────────────────────────────────
@@ -319,31 +363,14 @@ def _buscar(campo: str, valor: str, facturado: pd.DataFrame, pendiente: pd.DataF
         lineas = []
         q = valor.upper()
 
-        def _mask_cliente(col: pd.Series) -> pd.Series:
-            """
-            Búsqueda de cliente en dos pasos:
-            1. Substring case-insensitive (comportamiento original).
-            2. Fuzzy fallback con difflib si el paso 1 no encontró nada.
-               Necesario porque el ETL normalizó nombres con fuzzy matching
-               ("TEC Y DISEÑOS" → "TEC Y DISEÑO"), y el usuario puede escribir
-               la variante cruda del Excel que ya no existe en la BD.
-            """
-            from difflib import get_close_matches
-            mask = col.str.upper().str.contains(q, na=False)
-            if mask.any():
-                return mask
-            unicos = [c for c in col.str.upper().dropna().unique() if c]
-            cercanos = get_close_matches(q, unicos, n=5, cutoff=0.75)
-            return col.str.upper().isin(cercanos)
-
         if not facturas.empty:
-            res = facturas[_mask_cliente(facturas["cliente"])]
+            res = facturas[_mask_cliente(facturas["cliente"], q)]
             if not res.empty:
                 lineas.append(f"Reporte Mensual ({len(res)} facturas):")
                 lineas.append(_formato_facturas_mensual(res))
                 lineas.append(f"Subtotal: ${res['total'].sum():,.2f}\n")
         if not trabajos.empty:
-            res = trabajos[_mask_cliente(trabajos["cliente"])]
+            res = trabajos[_mask_cliente(trabajos["cliente"], q)]
             if not res.empty:
                 lineas.append(f"Trabajos ({len(res)}):")
                 lineas.append(_formato_trabajos(res))
@@ -500,6 +527,59 @@ def _cruce(facturado: pd.DataFrame, facturas: pd.DataFrame) -> str:
     return "\n".join(lineas)
 
 
+def _deuda_cliente(cliente: str, facturas: pd.DataFrame) -> str:
+    """Facturas pendientes (sin fecha_pago) de un cliente y su total adeudado."""
+    if facturas.empty:
+        return "El reporte mensual de facturas no está cargado."
+    pendientes = facturas[facturas["fecha_pago"].isna()]
+    res = pendientes[_mask_cliente(pendientes["cliente"], cliente.upper())]
+    if res.empty:
+        return f"No se encontraron facturas pendientes para '{cliente}'."
+
+    nombre = res.iloc[0]["cliente"]
+    linea = "─" * 36
+    filas = []
+    for _, f in res.iterrows():
+        concepto = str(f["concepto"])
+        concepto = concepto[:22] + "..." if len(concepto) > 25 else concepto
+        filas.append(f"  Fac {f['folio']} | {concepto:<25} | ${f['total']:>12,.2f}")
+    total = res["total"].sum()
+    return (
+        f"Facturas pendientes — {nombre}\n{linea}\n"
+        + "\n".join(filas)
+        + f"\n{linea}\nTotal pendiente: ${total:,.2f}  ({len(res)} facturas)"
+    )
+
+
+def _pagos_cliente(cliente: str, meses: int, facturas: pd.DataFrame) -> str:
+    """Pagos (facturas con fecha_pago) de un cliente en los últimos N meses."""
+    if facturas.empty:
+        return "El reporte mensual de facturas no está cargado."
+    from datetime import datetime
+    from dateutil.relativedelta import relativedelta
+
+    limite = datetime.now() - relativedelta(months=meses)
+    pagadas = facturas[facturas["fecha_pago"].notna() & (facturas["fecha_pago"] >= limite)]
+    res = pagadas[_mask_cliente(pagadas["cliente"], cliente.upper())]
+    unidad = "mes" if meses == 1 else "meses"
+    if res.empty:
+        return f"No se registraron pagos de '{cliente}' en los últimos {meses} {unidad}."
+
+    nombre = res.iloc[0]["cliente"]
+    res = res.sort_values("fecha_pago")
+    linea = "─" * 36
+    filas = [
+        f"  Fac {f['folio']} | {f['fecha_pago'].strftime('%d/%m/%Y')} | ${f['total']:>12,.2f}"
+        for _, f in res.iterrows()
+    ]
+    total = res["total"].sum()
+    return (
+        f"Pagos de {nombre} — últimos {meses} {unidad}\n{linea}\n"
+        + "\n".join(filas)
+        + f"\n{linea}\nTotal cobrado: ${total:,.2f}  ({len(res)} pagos)"
+    )
+
+
 # ─── Formateadores de salida ──────────────────────────────────────────────────
 
 def _formato_facturado(df: pd.DataFrame) -> str:
@@ -579,6 +659,8 @@ def _ayuda() -> str:
   cobradas                 → Facturas con fecha de pago
   sin cobrar               → Facturas sin fecha de pago
   buscar cliente [nombre]  → Facturas de un cliente
+  debe [cliente]           → Facturas pendientes de ese cliente
+  pagos [cliente] [N]      → Pagos del cliente en últimos N meses (default 1)
 
   CRUCE
   ─────
