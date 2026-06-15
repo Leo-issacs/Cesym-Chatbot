@@ -13,6 +13,7 @@ Despliegue cloud (Railway / Render):
 
 import asyncio
 import functools
+import logging
 import os
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -29,6 +30,8 @@ from src.sesiones import tiene_sesion, iniciar, iniciar_editar, iniciar_borrar, 
 from src.escritor import agregar_trabajo, editar_trabajo, borrar_trabajo
 from src.logger import registrar, leer_recientes
 from src.seguridad import verificar_peticion, numero_autorizado, _numeros_autorizados
+
+logger = logging.getLogger(__name__)
 
 _LIMITE_WA = 1500  # limite por mensaje de WhatsApp via Twilio
 _REPORTES_DIR = Path(__file__).parent.parent / "data" / "reportes"
@@ -311,6 +314,26 @@ async def servir_reporte(filename: str):
 
 @app.post("/webhook")
 async def webhook(request: Request, Body: str = Form(...), From: str = Form(...)):
+    # Catch-all de ÚLTIMO RECURSO: ningún error debe volverse traceback, mensaje
+    # vacío o silencio. Los errores específicos se manejan más arriba; esto es la
+    # red final que siempre devuelve algo útil al usuario y loguea con contexto.
+    #
+    # TIMEOUT DE TWILIO: Twilio cancela el request si no respondemos en ~15s. Toda
+    # operación síncrona lenta (sync de Drive, ETL, subida a Drive) en el path
+    # crítico está marcada con `TODO:ASYNC` en _manejar_webhook.
+    try:
+        return await _manejar_webhook(request, Body, From)
+    except Exception as exc:
+        logger.exception(
+            f"[webhook] Error no manejado: {exc} | numero={From} | entrada={Body!r}"
+        )
+        return _twiml(
+            "Ocurrió un error procesando tu mensaje. "
+            "Intenta de nuevo o escribe 'ayuda'."
+        )
+
+
+async def _manejar_webhook(request: Request, Body: str, From: str) -> Response:
     # ── Seguridad (firma Twilio + whitelist) ──────────────────────────
     # En modo log-only (por defecto) esto solo registra; bloquea únicamente
     # si ENFORCE_TWILIO_SIGNATURE / ENFORCE_WHITELIST están activos.
@@ -330,6 +353,9 @@ async def webhook(request: Request, Body: str = Form(...), From: str = Form(...)
     if tiene_sesion(numero):
         mensaje, datos_completos = procesar(numero, entrada)
         if datos_completos is not None:
+            # TODO:ASYNC — agregar/editar/borrar escriben Excel y suben a Drive de
+            # forma síncrona (puede tardar >5s con Drive lento) y luego
+            # _recargar_datos relee todo; mover a un executor o background task.
             if datos_completos.get("tipo") == "editar":
                 resultado = editar_trabajo(
                     datos_completos["indice"],
@@ -411,6 +437,8 @@ async def webhook(request: Request, Body: str = Form(...), From: str = Form(...)
 
     if entrada.lower() == "actualizar":
         try:
+            # TODO:ASYNC — _sincronizar_drive descarga los Excel de Drive de forma
+            # síncrona; con archivos grandes puede acercarse al timeout de Twilio.
             descargados = _sincronizar_drive()
             _recargar_datos()
             ts = _ultima_sync.strftime("%d/%m/%Y %H:%M") if _ultima_sync else "ahora"

@@ -30,10 +30,15 @@ ACTIVACIÓN:
   Postgres falla, cli._cargar_datos cae a Excel automáticamente.
 """
 
+import logging
+
 import pandas as pd
 from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
 
 from src.db_postgres import SCHEMA, get_engine
+
+logger = logging.getLogger(__name__)
 
 
 # ─── Queries SQL → DataFrames con columnas exactas del query engine ─────────────
@@ -102,11 +107,14 @@ ORDER BY t.id;
 
 def cargar_datos_desde_postgres(engine=None) -> tuple[
     pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, list[str]
-]:
+] | None:
     """
     Lee los cuatro DataFrames desde Postgres y los devuelve en el mismo orden
     y formato que _cargar_datos() de cli.py:
       (facturado, pendiente, facturas_mensual, trabajos, advertencias)
+
+    Devuelve None si la conexión a Postgres falla (OperationalError, timeout):
+    el caller (cli._cargar_datos) cae a Excel cuando recibe None.
 
     Las advertencias son una lista vacía: la validación de calidad de datos
     ya ocurrió cuando el ETL insertó los registros. Si alguna tabla está vacía
@@ -115,11 +123,15 @@ def cargar_datos_desde_postgres(engine=None) -> tuple[
     eng = engine or get_engine()
     advertencias: list[str] = []
 
-    with eng.connect() as conn:
-        facturado        = pd.read_sql(text(_SQL_FACTURADO),        conn)
-        pendiente        = pd.read_sql(text(_SQL_PENDIENTE),        conn)
-        facturas_mensual = pd.read_sql(text(_SQL_FACTURAS_MENSUAL), conn)
-        trabajos         = pd.read_sql(text(_SQL_TRABAJOS),         conn)
+    try:
+        with eng.connect() as conn:
+            facturado        = pd.read_sql(text(_SQL_FACTURADO),        conn)
+            pendiente        = pd.read_sql(text(_SQL_PENDIENTE),        conn)
+            facturas_mensual = pd.read_sql(text(_SQL_FACTURAS_MENSUAL), conn)
+            trabajos         = pd.read_sql(text(_SQL_TRABAJOS),         conn)
+    except OperationalError as exc:
+        logger.error(f"[datos_postgres] Conexión a Postgres falló, se usará Excel: {exc}")
+        return None
 
     # El ETL insertó el string literal "nan" para celdas vacías del Excel
     # (str(float('nan')) = "nan", que es truthy y no se convirtió a None).

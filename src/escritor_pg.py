@@ -22,7 +22,11 @@ RESOLUCIÓN nombre→id
   para que el trabajo aparezca con su cliente/técnico al leer desde Postgres.
 """
 
+import logging
+
 from sqlalchemy import text
+
+logger = logging.getLogger(__name__)
 
 # Columnas de trabajos que escribe el bot (id es SERIAL, lo asigna Postgres).
 _COLUMNAS = [
@@ -43,7 +47,11 @@ def insertar_trabajo(conn, datos: dict) -> int:
     placeholders = ", ".join(f":{c}" for c in _COLUMNAS)
     sql = text(f"INSERT INTO trabajos ({cols}) VALUES ({placeholders}) RETURNING id")
     params = {c: datos.get(c) for c in _COLUMNAS}
-    return int(conn.execute(sql, params).scalar_one())
+    try:
+        return int(conn.execute(sql, params).scalar_one())
+    except Exception as exc:
+        logger.error(f"[escritor_pg] insertar_trabajo falló: {exc}")
+        raise
 
 
 def actualizar_trabajo(conn, pg_id: int, datos: dict) -> None:
@@ -54,12 +62,20 @@ def actualizar_trabajo(conn, pg_id: int, datos: dict) -> None:
     asignaciones = ", ".join(f"{c} = :{c}" for c in columnas)
     params = {c: datos[c] for c in columnas}
     params["pg_id"] = pg_id
-    conn.execute(text(f"UPDATE trabajos SET {asignaciones} WHERE id = :pg_id"), params)
+    try:
+        conn.execute(text(f"UPDATE trabajos SET {asignaciones} WHERE id = :pg_id"), params)
+    except Exception as exc:
+        logger.error(f"[escritor_pg] actualizar_trabajo falló (id={pg_id}): {exc}")
+        raise
 
 
 def borrar_trabajo(conn, pg_id: int) -> None:
     """DELETE FROM trabajos WHERE id = pg_id."""
-    conn.execute(text("DELETE FROM trabajos WHERE id = :pg_id"), {"pg_id": pg_id})
+    try:
+        conn.execute(text("DELETE FROM trabajos WHERE id = :pg_id"), {"pg_id": pg_id})
+    except Exception as exc:
+        logger.error(f"[escritor_pg] borrar_trabajo falló (id={pg_id}): {exc}")
+        raise
 
 
 def resolver_o_crear_cliente(conn, nombre: str) -> int | None:
