@@ -151,9 +151,10 @@ def migrar_tecnicos(sqlite_conn, pg_engine) -> tuple[int, int]:
 
 def migrar_facturas(sqlite_conn, pg_engine) -> tuple[int, int]:
     """
-    Inserta facturas.
-    Idempotente por ON CONFLICT (folio) — el folio es la clave de negocio única.
-    Los IDs de cliente apuntan a los mismos IDs que ya migramos.
+    Inserta/actualiza facturas (UPSERT por folio).
+    El folio es la clave de negocio única, así que ON CONFLICT (folio) DO UPDATE
+    propaga los cambios de registros ya migrados (p.ej. una fecha_pago nueva) al
+    re-correr el ETL. Los IDs de cliente apuntan a los mismos IDs ya migrados.
 
     NOTA: Las fechas en SQLite son TEXT ('YYYY-MM-DD'); Postgres las acepta
     directamente en columnas DATE si tienen ese formato.
@@ -180,7 +181,13 @@ def migrar_facturas(sqlite_conn, pg_engine) -> tuple[int, int]:
                     VALUES
                         (:id, :folio, :cliente_id, CAST(:fecha_emision AS DATE),
                          :concepto, :total, CAST(:fecha_pago AS DATE), :cancelada)
-                    ON CONFLICT (folio) DO NOTHING
+                    ON CONFLICT (folio) DO UPDATE SET
+                        cliente_id    = EXCLUDED.cliente_id,
+                        fecha_emision = EXCLUDED.fecha_emision,
+                        concepto      = EXCLUDED.concepto,
+                        total         = EXCLUDED.total,
+                        fecha_pago    = EXCLUDED.fecha_pago,
+                        cancelada     = EXCLUDED.cancelada
                     """
                 ),
                 {
