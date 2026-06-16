@@ -77,3 +77,17 @@ def test_cargar_datos_fallback_cuando_postgres_none(monkeypatch):
 
     facturado, *_ = cli._cargar_datos()
     assert "factura" in facturado.columns   # cayó a Excel pese a USE_POSTGRES_READS=1
+
+
+def test_operationalerror_interno_retorna_none():
+    """A diferencia del test anterior (mockea la función completa), este ejercita el
+    except OperationalError INTERNO de cargar_datos_desde_postgres: la conexión cae
+    durante el SELECT y la función atrapa la excepción y retorna None (no la propaga)."""
+    from sqlalchemy.exc import OperationalError
+    from src.datos_postgres import cargar_datos_desde_postgres
+
+    class _EngineCaido:
+        def connect(self):
+            raise OperationalError("SELECT 1", {}, Exception("connection refused"))
+
+    assert cargar_datos_desde_postgres(engine=_EngineCaido()) is None
