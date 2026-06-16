@@ -124,7 +124,9 @@ def _cargar_datos():
 
 # ── Gráficas ──────────────────────────────────────────────────────────────────
 def _grafica_facturado_por_mes(df_fac: pd.DataFrame, ancho: float, alto: float) -> Image:
-    df = df_fac.dropna(subset=["fecha", "monto_actual"]).copy()
+    df = df_fac.copy()
+    df["fecha"] = pd.to_datetime(df["fecha"], errors="coerce")  # date de Postgres → Timestamp
+    df = df.dropna(subset=["fecha", "monto_actual"])
     df["periodo"] = df["fecha"].dt.to_period("M")
     por_mes = df.groupby("periodo")["monto_actual"].sum().reset_index()
     por_mes["label"] = por_mes["periodo"].astype(str)
@@ -184,7 +186,9 @@ def _grafica_estados_pie(df_fac: pd.DataFrame, ancho: float, alto: float) -> Ima
 
 
 def _grafica_cobradas_vs_pendientes(df_men: pd.DataFrame, ancho: float, alto: float) -> Image:
-    df = df_men.dropna(subset=["fecha"]).copy()
+    df = df_men.copy()
+    df["fecha"] = pd.to_datetime(df["fecha"], errors="coerce")  # date de Postgres → Timestamp
+    df = df.dropna(subset=["fecha"])
     df["periodo"] = df["fecha"].dt.to_period("M")
 
     cobradas  = df[df["fecha_pago"].notna()].groupby("periodo")["total"].sum()
