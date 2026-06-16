@@ -482,7 +482,7 @@
   <div class="header-left">
     <div class="logo-circle">CS</div>
     <div class="header-info">
-      <h1>Reporte Mensual</h1>
+      <h1 id="report-titulo">Reporte</h1>
       <p>Cesym &mdash; Sistema de Gestión de Cartera</p>
     </div>
   </div>
@@ -717,6 +717,7 @@ function actualizarDOM() {
   document.getElementById('header-date').textContent = RD.meta.fecha_generacion;
   document.getElementById('footer-date').textContent  = RD.meta.fecha_generacion;
   document.title = `Reporte ${RD.meta.periodo} Cesym — ${RD.meta.fecha_generacion}`;
+  document.getElementById('report-titulo').textContent = 'Reporte ' + RD.meta.periodo;
 
   // KPIs
   document.getElementById('kv-facturado').textContent  = fmtPesos(k.total_facturado);
