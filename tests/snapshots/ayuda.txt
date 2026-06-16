@@ -23,8 +23,10 @@
   cobradas                 → Facturas con fecha de pago
   sin cobrar               → Facturas sin fecha de pago
   buscar cliente [nombre]  → Facturas de un cliente
+  concepto [palabras]      → Busca en descripción de facturas y OC
   debe [cliente]           → Facturas pendientes de ese cliente
-  pagos [cliente] [N]      → Pagos del cliente en últimos N meses (default 1)
+  pagos [cliente]          → Últimos 5 pagos del cliente con detalle
+  pagos [cliente] N        → Pagos del cliente en últimos N meses
 
   CRUCE
   ─────
