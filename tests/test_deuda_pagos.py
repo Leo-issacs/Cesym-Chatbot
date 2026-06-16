@@ -31,9 +31,10 @@ def _facturas_deuda() -> pd.DataFrame:
         # TOYODA — 2 pagadas: una en el último mes, otra a 45 días (en 2 meses, no en 1)
         {"folio": 8050, "cliente": "TOYODA", "fecha": hoy, "concepto": "Servicio", "total": 15000.0, "fecha_pago": hoy - timedelta(days=15)},
         {"folio": 8061, "cliente": "TOYODA", "fecha": hoy, "concepto": "Reparación", "total": 9500.0, "fecha_pago": hoy - timedelta(days=45)},
-        # WALDOS — otra cuenta (1 pendiente, 1 pagada reciente)
+        # WALDOS — otra cuenta (1 pendiente, 2 pagadas; concepto con "filtros")
         {"folio": 9001, "cliente": "WALDOS", "fecha": hoy, "concepto": "Servicio", "total": 3000.0, "fecha_pago": pd.NaT},
-        {"folio": 9002, "cliente": "WALDOS", "fecha": hoy, "concepto": "Servicio", "total": 1000.0, "fecha_pago": hoy - timedelta(days=5)},
+        {"folio": 9002, "cliente": "WALDOS", "fecha": hoy, "concepto": "Mantenimiento filtros AC", "total": 1000.0, "fecha_pago": hoy - timedelta(days=5)},
+        {"folio": 9003, "cliente": "WALDOS", "fecha": hoy, "concepto": "Cambio de filtros", "total": 1500.0, "fecha_pago": hoy - timedelta(days=20)},
     ])
 
 
@@ -81,3 +82,38 @@ def test_alias_cuanto_nos_debe(rq_deuda):
 
 def test_alias_cuanto_pago(rq_deuda):
     assert rq_deuda("cuanto pagó TOYODA 1") == rq_deuda("pagos TOYODA 1")
+
+
+# ─── concepto / últimos pagos / checa-si-pago ────────────────────────────────
+
+def test_concepto_busca_en_descripcion(rq_deuda):
+    out = rq_deuda("concepto filtros")
+    assert "No se encontraron" not in out
+    assert "9002" in out or "9003" in out          # facturas con "filtros" en concepto
+
+
+def test_pagos_sin_numero_da_ultimos(rq_deuda):
+    out = rq_deuda("pagos WALDOS")
+    assert "Últimos pagos" in out
+    assert "pagos encontrados" in out
+
+
+def test_alias_checa_si_pago(rq_deuda):
+    assert rq_deuda("checa si pago WALDOS") == rq_deuda("pagos WALDOS")
+    assert rq_deuda("cobros WALDOS") == rq_deuda("pagos WALDOS")
+
+
+def test_tabla_sin_cobrar_tiene_concepto():
+    """Cada fila de la tabla de sin-cobrar del reporte trae la clave 'concepto'."""
+    from datetime import date
+    from src.reporte import _construir_datos_reporte
+
+    df_men = pd.DataFrame({
+        "folio": [101], "cliente": ["WALDOS"], "fecha": [date(2026, 5, 1)],
+        "concepto": ["Mantenimiento filtros"], "total": [2000.0], "fecha_pago": [pd.NaT],
+    })
+    vacio = pd.DataFrame()
+    datos = _construir_datos_reporte(pd.DataFrame(columns=["factura", "oc", "monto_actual",
+                                     "prioridad", "fecha", "estado"]), vacio, df_men, vacio, "mensual")
+    assert datos["tabla_facturas"]
+    assert all("concepto" in fila for fila in datos["tabla_facturas"])
