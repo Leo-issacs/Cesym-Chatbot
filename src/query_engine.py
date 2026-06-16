@@ -79,6 +79,10 @@ def run_query(
     if verbo == "errores":
         return _errores(facturado, pendiente)
 
+    # "concepto PALABRAS" → busca en la descripción de facturas y en las OC
+    if verbo == "concepto" and len(partes) >= 2:
+        return _buscar_concepto(" ".join(partes[1:]), facturado, facturas)
+
     # "debe CLIENTE" → facturas pendientes de ese cliente
     if verbo == "debe" and len(partes) >= 2:
         return _deuda_cliente(" ".join(partes[1:]), facturas)
@@ -527,6 +531,38 @@ def _cruce(facturado: pd.DataFrame, facturas: pd.DataFrame) -> str:
     return "\n".join(lineas)
 
 
+def _buscar_concepto(termino: str, facturado: pd.DataFrame, facturas: pd.DataFrame) -> str:
+    """Busca `termino` (contains, case-insensitive) en la descripción de las
+    facturas del reporte mensual (columna concepto) y en las OC de la cartera
+    (columna oc). Nota: facturado no tiene columna cliente, así que la OC se
+    muestra como oc | monto | estado."""
+    q = termino.upper()
+    linea = "─" * 36
+    lineas = []
+
+    if not facturas.empty and "concepto" in facturas.columns:
+        res = facturas[facturas["concepto"].astype(str).str.upper().str.contains(q, na=False)]
+        if not res.empty:
+            lineas.append(f'Facturas con "{termino}":')
+            for _, f in res.iterrows():
+                pago = "✓ cobrada" if pd.notna(f["fecha_pago"]) else "✗ pendiente"
+                lineas.append(f"  Fac {f['folio']} | {str(f['cliente']):<14} | ${f['total']:>10,.2f}  | {pago}")
+
+    if not facturado.empty and "oc" in facturado.columns:
+        res = facturado[facturado["oc"].astype(str).str.upper().str.contains(q, na=False)]
+        if not res.empty:
+            if lineas:
+                lineas.append(linea)
+            lineas.append(f'OC con "{termino}":')
+            for _, f in res.iterrows():
+                estado = f["estado"] if f["estado"] else "—"
+                lineas.append(f"  {str(f['oc']):<10} | ${f['monto_actual']:>10,.2f} | {estado}")
+
+    if not lineas:
+        return f"No se encontraron registros con '{termino}' en la descripción."
+    return "\n".join(lineas)
+
+
 def _deuda_cliente(cliente: str, facturas: pd.DataFrame) -> str:
     """Facturas pendientes (sin fecha_pago) de un cliente y su total adeudado."""
     if facturas.empty:
@@ -659,8 +695,10 @@ def _ayuda() -> str:
   cobradas                 → Facturas con fecha de pago
   sin cobrar               → Facturas sin fecha de pago
   buscar cliente [nombre]  → Facturas de un cliente
+  concepto [palabras]      → Busca en descripción de facturas y OC
   debe [cliente]           → Facturas pendientes de ese cliente
-  pagos [cliente] [N]      → Pagos del cliente en últimos N meses (default 1)
+  pagos [cliente]          → Últimos 5 pagos del cliente con detalle
+  pagos [cliente] N        → Pagos del cliente en últimos N meses
 
   CRUCE
   ─────
