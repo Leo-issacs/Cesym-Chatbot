@@ -632,6 +632,7 @@
         <tr>
           <th>Folio</th>
           <th>Cliente</th>
+          <th>Descripción</th>
           <th>Monto</th>
           <th>Fecha Emisión</th>
           <th>Días Vencidos</th>
@@ -765,7 +766,7 @@ function renderTabla() {
   const tbody = document.getElementById('tablaBody');
 
   if (rows.length === 0) {
-    tbody.innerHTML = '<tr class="row-empty"><td colspan="5">No se encontraron facturas con ese cliente.</td></tr>';
+    tbody.innerHTML = '<tr class="row-empty"><td colspan="6">No se encontraron facturas con ese cliente.</td></tr>';
   } else {
     tbody.innerHTML = rows.map(f => {
       const dias  = diasDesde(f.fecha);
@@ -774,6 +775,7 @@ function renderTabla() {
         <tr class="${clase}">
           <td class="folio">${f.folio}</td>
           <td>${f.cliente}</td>
+          <td>${(f.concepto || '').length > 35 ? (f.concepto || '').slice(0, 35) + '...' : (f.concepto || '')}</td>
           <td class="amount">${fmtPesos(f.monto)}</td>
           <td>${f.fecha}</td>
           <td><span class="badge">${dias} días</span></td>

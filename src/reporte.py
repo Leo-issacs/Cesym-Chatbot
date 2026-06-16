@@ -447,10 +447,11 @@ def _construir_datos_reporte(
         for _, row in sin_cobrar.sort_values("fecha").iterrows():
             fecha_str = row["fecha"].strftime("%d/%m/%Y") if pd.notna(row["fecha"]) else ""
             tabla.append({
-                "folio":   int(row["folio"]) if pd.notna(row["folio"]) else 0,
-                "cliente": str(row["cliente"]),
-                "monto":   round(_safe(row["total"]), 2),
-                "fecha":   fecha_str,
+                "folio":    int(row["folio"]) if pd.notna(row["folio"]) else 0,
+                "cliente":  str(row["cliente"]),
+                "concepto": str(row.get("concepto", ""))[:40],
+                "monto":    round(_safe(row["total"]), 2),
+                "fecha":    fecha_str,
             })
 
     # ── Alertas ──────────────────────────────────────────────────
