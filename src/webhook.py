@@ -20,6 +20,7 @@ from datetime import datetime
 from difflib import get_close_matches
 from pathlib import Path
 
+import httpx
 import pandas as pd
 from fastapi import FastAPI, Form, Response, HTTPException, Request
 from fastapi.responses import FileResponse
@@ -35,6 +36,15 @@ logger = logging.getLogger(__name__)
 
 _LIMITE_WA = 1500  # limite por mensaje de WhatsApp via Twilio
 _REPORTES_DIR = Path(__file__).parent.parent / "data" / "reportes"
+
+# Versión de Graph API para Meta Cloud API. Meta retira cada versión ~2 años
+# después de publicarla, por eso es configurable vía META_GRAPH_VERSION en lugar
+# de quedar fija en el código (default: una versión vigente, no la obsoleta v18.0).
+_META_GRAPH_VERSION_DEFAULT = "v21.0"
+
+
+def _meta_graph_version() -> str:
+    return os.environ.get("META_GRAPH_VERSION", _META_GRAPH_VERSION_DEFAULT)
 
 # ─── Estado global ─────────────────────────────────────────────────────────────
 _datos: dict = {
@@ -312,15 +322,46 @@ async def servir_reporte(filename: str):
     return FileResponse(path, media_type="text/html")
 
 
+@app.get("/webhook")
+async def verificar_webhook_meta(request: Request):
+    """Verificación del webhook de Meta (handshake inicial).
+
+    Meta hace un GET con hub.mode=subscribe, hub.verify_token=<token> y
+    hub.challenge=<n>. Si el token coincide con META_VERIFY_TOKEN devolvemos el
+    challenge tal cual (texto plano); si no, 403.
+
+    Nota: el query param correcto es `hub.verify_token` (guion bajo), no
+    `hub.verify.token`. Se lee de request.query_params para evitar el alias
+    incorrecto y no requiere que META_VERIFY_TOKEN esté definido para arrancar.
+    """
+    params = request.query_params
+    modo = params.get("hub.mode")
+    token = params.get("hub.verify_token")
+    challenge = params.get("hub.challenge")
+
+    verify_token = os.environ.get("META_VERIFY_TOKEN")
+    if modo == "subscribe" and verify_token and token == verify_token:
+        return Response(content=challenge or "", media_type="text/plain")
+    raise HTTPException(status_code=403, detail="Token de verificación inválido")
+
+
 @app.post("/webhook")
-async def webhook(request: Request, Body: str = Form(...), From: str = Form(...)):
-    # Catch-all de ÚLTIMO RECURSO: ningún error debe volverse traceback, mensaje
-    # vacío o silencio. Los errores específicos se manejan más arriba; esto es la
-    # red final que siempre devuelve algo útil al usuario y loguea con contexto.
+async def webhook(request: Request, Body: str = Form(default=""), From: str = Form(default="")):
+    # Punto de entrada único para AMBOS canales. Se enruta por content-type:
+    #   • application/json            → Meta Cloud API (_manejar_meta)
+    #   • form-urlencoded (Body/From) → Twilio (comportamiento INTACTO)
+    #
+    # Catch-all de ÚLTIMO RECURSO (solo Twilio): ningún error debe volverse
+    # traceback, mensaje vacío o silencio. La red final siempre devuelve algo útil
+    # al usuario y loguea con contexto. El path Meta tiene su propio manejo (ack 200).
     #
     # TIMEOUT DE TWILIO: Twilio cancela el request si no respondemos en ~15s. Toda
     # operación síncrona lenta (sync de Drive, ETL, subida a Drive) en el path
-    # crítico está marcada con `TODO:ASYNC` en _manejar_webhook.
+    # crítico está marcada con `TODO:ASYNC` en _procesar_mensaje.
+    content_type = request.headers.get("content-type", "")
+    if "application/json" in content_type:
+        return await _manejar_meta(request)
+
     try:
         return await _manejar_webhook(request, Body, From)
     except Exception as exc:
@@ -334,6 +375,7 @@ async def webhook(request: Request, Body: str = Form(...), From: str = Form(...)
 
 
 async def _manejar_webhook(request: Request, Body: str, From: str) -> Response:
+    """Camino Twilio: seguridad (firma + whitelist) + lógica de negocio → TwiML."""
     # ── Seguridad (firma Twilio + whitelist) ──────────────────────────
     # En modo log-only (por defecto) esto solo registra; bloquea únicamente
     # si ENFORCE_TWILIO_SIGNATURE / ENFORCE_WHITELIST están activos.
@@ -343,11 +385,117 @@ async def _manejar_webhook(request: Request, Body: str, From: str) -> Response:
     if bloqueo is not None:
         return bloqueo
 
-    entrada = Body.strip()
-    numero = From  # ej: "whatsapp:+521234567890"
+    # numero ej: "whatsapp:+521234567890"
+    respuesta = await _procesar_mensaje(From, Body)
+    return _twiml(respuesta)
+
+
+async def _manejar_meta(request: Request) -> Response:
+    """Camino Meta Cloud API: parsea el JSON, llama a la MISMA lógica de negocio
+    y responde por la Graph API. Siempre devuelve 200 (ack) para que Meta no
+    reintente; los errores se loguean. La firma X-Hub-Signature-256 de Meta no se
+    valida aquí (fuera de alcance de este cambio)."""
+    try:
+        data = await request.json()
+    except Exception:
+        logger.warning("[meta] body no es JSON válido; se ignora.")
+        return Response(status_code=200)
+
+    try:
+        value = data["entry"][0]["changes"][0]["value"]
+    except (KeyError, IndexError, TypeError):
+        logger.warning("[meta] estructura de webhook inesperada; se ignora.")
+        return Response(status_code=200)
+
+    mensajes = value.get("messages")
+    if not mensajes:
+        # Status updates (sent/delivered/read) u otros eventos sin mensaje → ack 200.
+        return Response(status_code=200)
+
+    msg = mensajes[0]
+    numero = msg.get("from")  # ej: "521234567890" (sin "whatsapp:")
+    if not numero:
+        return Response(status_code=200)
+
+    # Solo procesamos mensajes de texto; otros tipos (imagen, audio…) → guía.
+    if msg.get("type") == "text":
+        entrada = (msg.get("text") or {}).get("body", "")
+    else:
+        entrada = ""
+
+    try:
+        respuesta = await _procesar_mensaje(numero, entrada)
+        await enviar_mensaje_meta(numero, respuesta)
+    except Exception as exc:
+        logger.exception(
+            f"[meta] Error procesando mensaje | numero={numero} | entrada={entrada!r}: {exc}"
+        )
+        try:
+            await enviar_mensaje_meta(
+                numero,
+                "Ocurrió un error procesando tu mensaje. "
+                "Intenta de nuevo o escribe 'ayuda'.",
+            )
+        except Exception:
+            pass
+    return Response(status_code=200)
+
+
+async def enviar_mensaje_meta(numero: str, texto: str) -> bool:
+    """Envía un mensaje de texto vía Meta Cloud API (Graph API).
+
+    Lee META_ACCESS_TOKEN / META_PHONE_NUMBER_ID en tiempo de ejecución (no al
+    importar), por lo que la app arranca aunque no estén configuradas. Si faltan,
+    loguea y retorna False sin lanzar. Divide textos largos igual que Twilio.
+    """
+    token = os.environ.get("META_ACCESS_TOKEN")
+    phone_id = os.environ.get("META_PHONE_NUMBER_ID")
+    if not token or not phone_id:
+        logger.error(
+            "[meta] META_ACCESS_TOKEN o META_PHONE_NUMBER_ID no configurados; "
+            "no se puede enviar la respuesta."
+        )
+        return False
+
+    url = f"https://graph.facebook.com/{_meta_graph_version()}/{phone_id}/messages"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+    }
+
+    ok = True
+    async with httpx.AsyncClient(timeout=15) as client:
+        for parte in _dividir_texto(texto):
+            payload = {
+                "messaging_product": "whatsapp",
+                "to": numero,
+                "type": "text",
+                "text": {"body": parte},
+            }
+            try:
+                r = await client.post(url, json=payload, headers=headers)
+                if r.status_code >= 400:
+                    logger.error(
+                        f"[meta] error al enviar a {numero} ({r.status_code}): {r.text}"
+                    )
+                    ok = False
+            except httpx.HTTPError as exc:
+                logger.exception(f"[meta] excepción al enviar a {numero}: {exc}")
+                ok = False
+    return ok
+
+
+async def _procesar_mensaje(numero: str, entrada: str) -> str:
+    """Lógica de negocio compartida por Twilio y Meta.
+
+    Recibe el número del usuario y el texto crudo; devuelve el TEXTO de respuesta
+    (sin formato de canal). El canal decide cómo entregarlo: Twilio lo envuelve en
+    TwiML, Meta lo manda por la Graph API.
+    """
+    entrada = entrada.strip()
 
     if not entrada:
-        return _twiml("Hola. Escribe 'ayuda' para ver los comandos disponibles.")
+        return "Hola. Escribe 'ayuda' para ver los comandos disponibles."
 
     # --- Sesion activa (flujo de registro o edición) ---
     if tiene_sesion(numero):
@@ -374,35 +522,34 @@ async def _manejar_webhook(request: Request, Body: str, From: str) -> Response:
                 resultado = agregar_trabajo(datos_completos)
             _recargar_datos()
             registrar(numero, entrada, resultado)
-            return _twiml(resultado)
-        return _twiml(mensaje)
+            return resultado
+        return mensaje
 
     if entrada.lower() in ("salir", "exit", "quit"):
-        return _twiml("Escribe 'ayuda' para ver los comandos disponibles.")
+        return "Escribe 'ayuda' para ver los comandos disponibles."
 
     if entrada.lower() == "logs":
         if not _puede_ver_logs(numero):
-            return _twiml(
-                "No tienes permiso para ver los logs. Pide acceso al administrador."
-            )
-        return _twiml(leer_recientes(20))
+            return "No tienes permiso para ver los logs. Pide acceso al administrador."
+        return leer_recientes(20)
 
     # Borrar y editar van primero — comparten alta similitud con "agregar trabajo" en difflib
     if _es_borrar_trabajo(entrada):
         registros = _formatear_para_editar(_datos["trabajos"])
-        return _twiml(iniciar_borrar(numero, registros))
+        return iniciar_borrar(numero, registros)
 
     if _es_editar_trabajo(entrada):
         registros = _formatear_para_editar(_datos["trabajos"])
-        return _twiml(iniciar_editar(numero, registros))
+        return iniciar_editar(numero, registros)
 
     # Iniciar flujo de registro (con tolerancia a typos)
     if _es_agregar_trabajo(entrada):
-        return _twiml(iniciar(numero))
+        return iniciar(numero)
 
     if not _hay_datos() and entrada.lower() != "actualizar":
-        return _twiml(
-            "No hay datos cargados. Escribe 'actualizar' para descargar los archivos desde Google Drive."
+        return (
+            "No hay datos cargados. Escribe 'actualizar' para descargar los "
+            "archivos desde Google Drive."
         )
 
     if entrada.lower() in ("reporte", "reporte mensual", "reporte semanal"):
@@ -431,9 +578,9 @@ async def _manejar_webhook(request: Request, Body: str, From: str) -> Response:
             dominio = os.getenv("RAILWAY_PUBLIC_DOMAIN", "localhost:8000")
             url = f"https://{dominio}/reportes/{html_path.name}"
             registrar(numero, entrada, url)
-            return _twiml(f"Reporte {periodo} listo:\n{url}")
+            return f"Reporte {periodo} listo:\n{url}"
         except Exception as e:
-            return _twiml(f"Error al generar el reporte: {e}")
+            return f"Error al generar el reporte: {e}"
 
     if entrada.lower() == "actualizar":
         try:
@@ -450,10 +597,10 @@ async def _manejar_webhook(request: Request, Body: str, From: str) -> Response:
                 f"{len(_datos['facturas_mensual'])} mensual | "
                 f"{len(_datos['trabajos'])} trabajos"
             )
-            return _twiml("\n".join(lineas))
+            return "\n".join(lineas)
         except Exception as e:
-            return _twiml(f"Error al actualizar: {e}")
+            return f"Error al actualizar: {e}"
 
     respuesta = _ejecutar_consulta(entrada)
     registrar(numero, entrada, respuesta)
-    return _twiml(respuesta)
+    return respuesta
