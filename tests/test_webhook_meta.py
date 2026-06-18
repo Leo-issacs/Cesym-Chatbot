@@ -160,3 +160,49 @@ def test_enviar_meta_sin_credenciales_retorna_false(monkeypatch):
     monkeypatch.delenv("META_PHONE_NUMBER_ID", raising=False)
     ok = asyncio.run(webhook.enviar_mensaje_meta("5218681707554", "hola"))
     assert ok is False   # loguea y no lanza
+
+
+# ─── Normalización del número mexicano (error 131030) ────────────────────────
+
+def test_normaliza_numero_mexicano():
+    # 521 + 10 dígitos (13) → 52 + 10 dígitos (quita el "1")
+    assert webhook._normalizar_numero_meta("5218681707554") == "528681707554"
+
+
+def test_no_altera_numeros_de_otros_paises_ni_mx_ya_normalizado():
+    assert webhook._normalizar_numero_meta("14155238886") == "14155238886"   # USA (+1)
+    assert webhook._normalizar_numero_meta("34911234567") == "34911234567"   # España (+34)
+    assert webhook._normalizar_numero_meta("528681707554") == "528681707554"  # MX ya correcto
+    # "521…" pero longitud distinta a 13 → no se toca (no es el patrón MX móvil)
+    assert webhook._normalizar_numero_meta("52186817075") == "52186817075"
+
+
+def test_enviar_meta_usa_numero_normalizado_en_payload(monkeypatch):
+    """El destinatario que llega a la Graph API debe ir ya normalizado."""
+    monkeypatch.setenv("META_ACCESS_TOKEN", "tok")
+    monkeypatch.setenv("META_PHONE_NUMBER_ID", "PID")
+    capturado = {}
+
+    class _FakeResp:
+        status_code = 200
+        text = ""
+
+    class _FakeClient:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def post(self, url, json=None, headers=None):
+            capturado["to"] = json["to"]
+            return _FakeResp()
+
+    monkeypatch.setattr(webhook.httpx, "AsyncClient", _FakeClient)
+
+    ok = asyncio.run(webhook.enviar_mensaje_meta("5218681707554", "hola"))
+    assert ok is True
+    assert capturado["to"] == "528681707554"   # sin el "1" extra
