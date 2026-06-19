@@ -122,15 +122,21 @@ def filtrar_facturas(
     if cliente:
         from src.query_engine import _mask_cliente
         df = df[_mask_cliente(df["cliente"], cliente.upper())]
+
     if "fecha" in df.columns:
+        # La columna "fecha" puede llegar como string/object desde Postgres; hay
+        # que normalizarla a datetime ANTES de usar el accesor .dt o comparar por
+        # fecha (si no, falla con "Can only use .dt accessor with datetimelike
+        # values"). Las fechas inválidas se vuelven NaT y quedan FUERA de los
+        # filtros por mes/días (NaT no cumple ninguna comparación).
+        df = df.copy()
+        df["fecha"] = pd.to_datetime(df["fecha"], errors="coerce")
         if dias is not None:
             from datetime import datetime, timedelta
             limite = datetime.now() - timedelta(days=dias)
             df = df[df["fecha"] >= limite]
         elif mes is not None:
             df = df[df["fecha"].dt.month == mes]
-
-    if "fecha" in df.columns:
         df = df.sort_values("fecha")
 
     truncado = len(df) > MAX_FILAS
@@ -179,8 +185,9 @@ def generar_excel(
     for _, f in facturas.iterrows():
         folio = int(f["folio"]) if pd.notna(f["folio"]) else ""
         monto = float(f["total"]) if pd.notna(f["total"]) else 0.0
-        fecha_val = f["fecha"] if "fecha" in facturas.columns else None
-        fecha = fecha_val.strftime("%d/%m/%Y") if pd.notna(fecha_val) else ""
+        # to_datetime defensivo: la fecha puede venir como string/object o NaT.
+        fecha_dt = pd.to_datetime(f["fecha"], errors="coerce") if "fecha" in facturas.columns else None
+        fecha = fecha_dt.strftime("%d/%m/%Y") if pd.notna(fecha_dt) else ""
         ws.cell(row=r, column=1, value=folio)
         ws.cell(row=r, column=2, value=str(f.get("cliente", "")))
         c_monto = ws.cell(row=r, column=3, value=monto)
