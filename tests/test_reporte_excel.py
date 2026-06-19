@@ -81,6 +81,54 @@ def test_acota_reportes_grandes(monkeypatch):
     assert len(df) == 2 and trunc is True
 
 
+# ─── Regresión: "fecha" como STRING desde la BD (bug de producción) ──────────
+
+def _facturas_fecha_string():
+    """Réplica de producción: 'fecha' llega como STRING (object), no datetime,
+    e incluye una fecha inválida que debe volverse NaT."""
+    return pd.DataFrame({
+        "folio":      [201, 202, 203, 204],
+        "cliente":    ["WALDOS", "OXXO", "WALDOS", "SORIANA"],
+        "fecha":      ["2025-11-26", "2025-12-01", "fecha-invalida", "2025-11-05"],
+        "concepto":   ["A", "B", "C", "D"],
+        "total":      [100.0, 200.0, 300.0, 400.0],
+        "fecha_pago": [None, None, None, None],
+    })
+
+
+def test_filtra_por_mes_con_fecha_string():
+    """Antes fallaba con 'Can only use .dt accessor with datetimelike values'."""
+    df, _ = rx.filtrar_facturas(_facturas_fecha_string(), mes=11)
+    assert set(df["folio"]) == {201, 204}   # las dos de noviembre con fecha válida
+    assert 203 not in set(df["folio"])       # fecha inválida (NaT) queda fuera
+
+
+def test_filtra_por_dias_con_fecha_string():
+    hoy = pd.Timestamp.now().normalize()
+    df_in = pd.DataFrame({
+        "folio": [1, 2, 3],
+        "cliente": ["A", "B", "C"],
+        "fecha": [(hoy - pd.Timedelta(days=2)).strftime("%Y-%m-%d"),
+                  (hoy - pd.Timedelta(days=20)).strftime("%Y-%m-%d"),
+                  "no-es-fecha"],
+        "concepto": ["", "", ""],
+        "total": [10.0, 20.0, 30.0],
+        "fecha_pago": [None, None, None],
+    })
+    df, _ = rx.filtrar_facturas(df_in, dias=7)
+    assert set(df["folio"]) == {1}   # solo la de hace 2 días; >7d y NaT quedan fuera
+
+
+def test_genera_excel_con_fecha_string(tmp_path):
+    """generar_excel tolera fecha string/inválida sin romper."""
+    df = _facturas_fecha_string()
+    ruta = rx.generar_excel(df, "T", ruta=tmp_path / "r.xlsx")
+    fechas = [load_workbook(ruta).active.cell(r, 4).value for r in range(4, 4 + len(df))]
+    assert "26/11/2025" in fechas   # fecha string válida → formateada
+    # fecha inválida → celda vacía (openpyxl la lee como None), sin crash
+    assert any(v in (None, "") for v in fechas)
+
+
 # ─── Generación del Excel ────────────────────────────────────────────────────
 
 def test_genera_excel_con_encabezados_filas_y_total(tmp_path):
