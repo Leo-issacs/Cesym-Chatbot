@@ -46,6 +46,20 @@ _META_GRAPH_VERSION_DEFAULT = "v21.0"
 def _meta_graph_version() -> str:
     return os.environ.get("META_GRAPH_VERSION", _META_GRAPH_VERSION_DEFAULT)
 
+
+def _normalizar_numero_meta(numero: str) -> str:
+    """Normaliza el número de destino para la Graph API (caso México).
+
+    WhatsApp entrega el `from` mexicano como 521XXXXXXXXXX (52 + 1 + 10 dígitos),
+    pero la Graph API espera el destinatario SIN ese "1": 52XXXXXXXXXX. Si no se
+    quita, el envío falla con error 131030 ("Recipient phone number not in allowed
+    list"). Solo se toca el caso 521 + 10 dígitos (13 dígitos en total); números de
+    otros países quedan intactos.
+    """
+    if numero.isdigit() and len(numero) == 13 and numero.startswith("521"):
+        return "52" + numero[-10:]
+    return numero
+
 # ─── Estado global ─────────────────────────────────────────────────────────────
 _datos: dict = {
     "facturado": pd.DataFrame(),
@@ -456,6 +470,9 @@ async def enviar_mensaje_meta(numero: str, texto: str) -> bool:
             "no se puede enviar la respuesta."
         )
         return False
+
+    # México: 521XXXXXXXXXX → 52XXXXXXXXXX (la Graph API rechaza el "1" extra).
+    numero = _normalizar_numero_meta(numero)
 
     url = f"https://graph.facebook.com/{_meta_graph_version()}/{phone_id}/messages"
     headers = {
