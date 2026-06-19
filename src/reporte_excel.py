@@ -46,6 +46,23 @@ _RELLENO = {
 }
 
 
+def es_solicitud_dashboard(texto: str) -> bool:
+    """True si el usuario pide el DASHBOARD HTML (con gráficas), no el Excel.
+
+    Gatillos: "dashboard" en cualquier parte, o "reporte ..." acompañado de una
+    palabra visual ("visual", "gráfico/a(s)", "grafico/a(s)"). Se usa para NO
+    tratar estos mensajes como reporte Excel y enrutarlos al dashboard.
+    """
+    if not texto:
+        return False
+    t = texto.strip().lower()
+    if "dashboard" in t:
+        return True
+    if t.startswith("reporte") and ("visual" in t or "gráfic" in t or "grafic" in t):
+        return True
+    return False
+
+
 def parsear_solicitud_reporte(texto: str) -> dict | None:
     """Detecta una solicitud de reporte EXPORTABLE y extrae cliente y/o mes.
 
@@ -63,6 +80,9 @@ def parsear_solicitud_reporte(texto: str) -> dict | None:
         return None
     t = texto.strip().lower()
     if not (t.startswith("reporte") or t.startswith("factura")):
+        return None
+    # "reporte visual"/"gráfico"/"dashboard" piden el dashboard HTML, no el Excel.
+    if es_solicitud_dashboard(texto):
         return None
 
     tokens = re.findall(r"[0-9a-záéíóúñü]+", t)

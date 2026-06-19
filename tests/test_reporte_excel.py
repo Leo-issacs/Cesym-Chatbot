@@ -267,3 +267,90 @@ def test_twilio_no_dispara_reporte(monkeypatch):
     assert "application/xml" in r.headers["content-type"]   # TwiML (texto)
     assert "texto:facturas de waldos de diciembre" in r.text
     assert disparado["reporte"] is False   # el camino Twilio NO genera documento
+
+
+# ─── Dashboard HTML: intent NUEVO, separado del Excel ────────────────────────
+
+def test_es_solicitud_dashboard():
+    assert rx.es_solicitud_dashboard("dashboard") is True
+    assert rx.es_solicitud_dashboard("reporte visual") is True
+    assert rx.es_solicitud_dashboard("reporte gráfico") is True
+    assert rx.es_solicitud_dashboard("reporte grafico de noviembre") is True
+    assert rx.es_solicitud_dashboard("reporte mensual") is False
+    assert rx.es_solicitud_dashboard("facturas de waldos") is False
+
+
+def test_dashboard_no_se_parsea_como_excel():
+    # "reporte visual"/"dashboard" NO deben tratarse como reporte Excel...
+    assert rx.parsear_solicitud_reporte("reporte visual") is None
+    assert rx.parsear_solicitud_reporte("dashboard") is None
+    # ...pero "reporte mensual" SIGUE siendo Excel (coexistencia).
+    assert rx.parsear_solicitud_reporte("reporte mensual") is not None
+
+
+def test_procesar_dashboard_devuelve_link_publico(monkeypatch):
+    """El intent dashboard genera el HTML y devuelve el link con PUBLIC_BASE_URL."""
+    from pathlib import Path
+    import src.reporte as reporte
+    monkeypatch.setenv("PUBLIC_BASE_URL", "https://cesymhvac.com")
+    monkeypatch.delenv("DRIVE_REPORTS_FOLDER_ID", raising=False)
+    monkeypatch.setattr(webhook, "_hay_datos", lambda: True)
+    monkeypatch.setattr(webhook, "registrar", lambda *a, **k: None)
+    monkeypatch.setattr(reporte, "generar_html",
+                        lambda *a, **k: Path("/tmp/reporte_mensual_TOKEN.html"))
+
+    out = asyncio.run(webhook._procesar_mensaje("521", "dashboard"))
+    assert out.startswith("Dashboard listo:")
+    assert "https://cesymhvac.com/reportes/reporte_mensual_TOKEN.html" in out
+
+    # "reporte mensual" por este flujo (texto/HTML) conserva su etiqueta.
+    out2 = asyncio.run(webhook._procesar_mensaje("521", "reporte mensual"))
+    assert out2.startswith("Reporte mensual listo:")
+
+
+def test_meta_dashboard_no_dispara_excel(monkeypatch):
+    """En Meta, 'dashboard' va por el flujo de texto (link HTML), NO genera Excel."""
+    disparos = {"excel": False, "texto": None}
+
+    async def fake_excel(numero, solicitud):
+        disparos["excel"] = True
+
+    async def fake_procesar(numero, entrada):
+        disparos["texto"] = entrada
+        return "Dashboard listo:\nhttps://cesymhvac.com/reportes/x.html"
+
+    enviados = {}
+
+    async def fake_enviar(numero, texto):
+        enviados["texto"] = texto
+        return True
+
+    monkeypatch.setattr(webhook, "_enviar_reporte_excel_meta", fake_excel)
+    monkeypatch.setattr(webhook, "_procesar_mensaje", fake_procesar)
+    monkeypatch.setattr(webhook, "enviar_mensaje_meta", fake_enviar)
+
+    client = TestClient(webhook.app)
+    r = client.post("/webhook", json=_payload_meta("dashboard"))
+    assert r.status_code == 200
+    assert disparos["excel"] is False         # NO generó Excel
+    assert disparos["texto"] == "dashboard"   # pasó por el flujo de texto
+    assert "Dashboard listo" in enviados["texto"]
+
+
+def test_meta_reporte_mensual_sigue_siendo_excel(monkeypatch):
+    """Coexistencia: 'reporte mensual' en Meta SIGUE disparando el Excel."""
+    disparos = {"excel": None}
+
+    async def fake_excel(numero, solicitud):
+        disparos["excel"] = solicitud
+
+    async def fake_procesar(numero, entrada):
+        return "NO-DEBERIA-LLEGAR"
+
+    monkeypatch.setattr(webhook, "_enviar_reporte_excel_meta", fake_excel)
+    monkeypatch.setattr(webhook, "_procesar_mensaje", fake_procesar)
+
+    client = TestClient(webhook.app)
+    r = client.post("/webhook", json=_payload_meta("reporte mensual"))
+    assert r.status_code == 200
+    assert disparos["excel"] is not None      # → Excel (documento), intacto

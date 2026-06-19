@@ -709,7 +709,12 @@ async def _procesar_mensaje(numero: str, entrada: str) -> str:
             "archivos desde Google Drive."
         )
 
-    if entrada.lower() in ("reporte", "reporte mensual", "reporte semanal"):
+    # Dashboard HTML (con gráficas) por link. Intent SEPARADO del Excel:
+    #   "dashboard"/"reporte visual"/"reporte gráfico" → dashboard HTML (este branch).
+    #   "reporte mensual"/"semanal" en Meta → Excel (interceptado en _manejar_meta).
+    # En Twilio "reporte mensual" también cae aquí (HTML por link), como siempre.
+    es_dashboard = reporte_excel.es_solicitud_dashboard(entrada)
+    if es_dashboard or entrada.lower() in ("reporte", "reporte mensual", "reporte semanal"):
         periodo = "semanal" if "semanal" in entrada.lower() else "mensual"
         try:
             from src.reporte import generar_html
@@ -742,7 +747,8 @@ async def _procesar_mensaje(numero: str, entrada: str) -> str:
             base = base.rstrip("/")
             url = f"{base}/reportes/{html_path.name}"
             registrar(numero, entrada, url)
-            return f"Reporte {periodo} listo:\n{url}"
+            etiqueta = "Dashboard" if es_dashboard else f"Reporte {periodo}"
+            return f"{etiqueta} listo:\n{url}"
         except Exception as e:
             return f"Error al generar el reporte: {e}"
 
