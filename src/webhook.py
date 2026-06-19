@@ -15,6 +15,7 @@ import asyncio
 import functools
 import logging
 import os
+import re
 from contextlib import asynccontextmanager
 from datetime import datetime
 from difflib import get_close_matches
@@ -27,6 +28,7 @@ from fastapi.responses import FileResponse
 
 from src.cli import _cargar_dotenv, _cargar_datos, _sincronizar_drive
 from src.query_engine import run_query
+from src import reporte_excel
 from src.sesiones import tiene_sesion, iniciar, iniciar_editar, iniciar_borrar, procesar, cancelar
 from src.escritor import agregar_trabajo, editar_trabajo, borrar_trabajo
 from src.logger import registrar, leer_recientes
@@ -437,6 +439,27 @@ async def _manejar_meta(request: Request) -> Response:
     else:
         entrada = ""
 
+    # Solicitud de reporte exportable (Excel) → se envía como documento por la
+    # Graph API. Es una capacidad EXCLUSIVA del canal Meta; el camino Twilio no
+    # se toca (allí estos mensajes siguen su flujo de texto habitual).
+    if entrada:
+        solicitud = reporte_excel.parsear_solicitud_reporte(entrada)
+        if solicitud is not None:
+            try:
+                await _enviar_reporte_excel_meta(numero, solicitud)
+            except Exception as exc:
+                logger.exception(
+                    f"[meta] error en reporte Excel | numero={numero} | "
+                    f"solicitud={solicitud}: {exc}"
+                )
+                try:
+                    await enviar_mensaje_meta(
+                        numero, "No pude generar el reporte. Intenta de nuevo."
+                    )
+                except Exception:
+                    pass
+            return Response(status_code=200)
+
     try:
         respuesta = await _procesar_mensaje(numero, entrada)
         await enviar_mensaje_meta(numero, respuesta)
@@ -500,6 +523,123 @@ async def enviar_mensaje_meta(numero: str, texto: str) -> bool:
                 logger.exception(f"[meta] excepción al enviar a {numero}: {exc}")
                 ok = False
     return ok
+
+
+_MIME_XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+async def enviar_documento_meta(
+    numero: str, ruta: Path, filename: str, caption: str = "",
+    mime: str = _MIME_XLSX,
+) -> bool:
+    """Envía un archivo como documento de WhatsApp vía Meta Cloud API.
+
+    Dos pasos: (1) sube el archivo al endpoint /media → media_id; (2) manda un
+    mensaje type 'document' con ese media_id. Lee credenciales en runtime; si
+    faltan, loguea y retorna False sin lanzar.
+    """
+    token = os.environ.get("META_ACCESS_TOKEN")
+    phone_id = os.environ.get("META_PHONE_NUMBER_ID")
+    if not token or not phone_id:
+        logger.error("[meta] credenciales faltantes; no se envía el documento.")
+        return False
+
+    numero = _normalizar_numero_meta(numero)
+    base = f"https://graph.facebook.com/{_meta_graph_version()}/{phone_id}"
+    auth = {"Authorization": f"Bearer {token}"}
+
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            # 1) Subir media (multipart).
+            with open(ruta, "rb") as fh:
+                r = await client.post(
+                    f"{base}/media",
+                    headers=auth,
+                    data={"messaging_product": "whatsapp", "type": mime},
+                    files={"file": (filename, fh, mime)},
+                )
+            if r.status_code >= 400:
+                logger.error(f"[meta] error subiendo media ({r.status_code}): {r.text}")
+                return False
+            media_id = r.json().get("id")
+            if not media_id:
+                logger.error(f"[meta] respuesta de /media sin id: {r.text}")
+                return False
+
+            # 2) Enviar el documento referenciando el media_id.
+            payload = {
+                "messaging_product": "whatsapp",
+                "to": numero,
+                "type": "document",
+                "document": {"id": media_id, "filename": filename, "caption": caption},
+            }
+            r2 = await client.post(
+                f"{base}/messages",
+                headers={**auth, "Content-Type": "application/json"},
+                json=payload,
+            )
+            if r2.status_code >= 400:
+                logger.error(f"[meta] error enviando documento ({r2.status_code}): {r2.text}")
+                return False
+        return True
+    except httpx.HTTPError as exc:
+        logger.exception(f"[meta] excepción enviando documento a {numero}: {exc}")
+        return False
+
+
+async def _enviar_reporte_excel_meta(numero: str, solicitud: dict) -> None:
+    """Genera el Excel del reporte solicitado y lo envía como documento (Meta).
+
+    Reutiliza el DataFrame facturas_mensual ya cargado y el filtrado de
+    reporte_excel. Borra el archivo temporal tras enviarlo (haya éxito o no).
+    """
+    facturas = _datos.get("facturas_mensual")
+    if facturas is None or facturas.empty:
+        await enviar_mensaje_meta(
+            numero, "Aún no hay datos de facturas cargados. Escribe 'actualizar'."
+        )
+        return
+
+    df, truncado = reporte_excel.filtrar_facturas(
+        facturas, solicitud.get("cliente"), solicitud.get("mes"), solicitud.get("dias")
+    )
+
+    partes = []
+    if solicitud.get("cliente"):
+        partes.append(solicitud["cliente"].title())
+    if solicitud.get("mes_nombre"):
+        partes.append(solicitud["mes_nombre"])
+    elif solicitud.get("etiqueta"):
+        partes.append(solicitud["etiqueta"].title())
+    etiqueta = " - ".join(partes) if partes else "General"
+
+    if df.empty:
+        await enviar_mensaje_meta(numero, f"No encontré facturas para el reporte ({etiqueta}).")
+        return
+
+    titulo = f"Reporte de facturas — {etiqueta}"
+    total = float(df["total"].sum())
+    slug = re.sub(r"[^a-z0-9]+", "_", etiqueta.lower()).strip("_") or "general"
+    filename = f"reporte_{slug}.xlsx"
+    caption = f"{titulo}\n{len(df)} facturas · Total ${total:,.2f}"
+    if truncado:
+        caption += (
+            f"\n(Acotado a {reporte_excel.MAX_FILAS} filas; "
+            "especifica un mes para afinar.)"
+        )
+
+    ruta = reporte_excel.generar_excel(df, titulo)
+    try:
+        ok = await enviar_documento_meta(numero, ruta, filename, caption)
+        if not ok:
+            await enviar_mensaje_meta(
+                numero, "Generé el reporte pero no pude enviarlo. Intenta de nuevo."
+            )
+    finally:
+        try:
+            ruta.unlink(missing_ok=True)
+        except Exception:
+            pass
 
 
 async def _procesar_mensaje(numero: str, entrada: str) -> str:
@@ -592,8 +732,15 @@ async def _procesar_mensaje(numero: str, entrada: str) -> str:
                     )
                 except Exception:
                     pass
-            dominio = os.getenv("RAILWAY_PUBLIC_DOMAIN", "localhost:8000")
-            url = f"https://{dominio}/reportes/{html_path.name}"
+            # Base pública del link. RAILWAY_PUBLIC_DOMAIN solo existe en Railway;
+            # en Hetzner hay que usar PUBLIC_BASE_URL (default: el dominio público).
+            # Antes caía al hardcode "localhost:8000", inservible para el cliente.
+            base = os.getenv("PUBLIC_BASE_URL")
+            if not base:
+                dom = os.getenv("RAILWAY_PUBLIC_DOMAIN")
+                base = f"https://{dom}" if dom else "https://cesymhvac.com"
+            base = base.rstrip("/")
+            url = f"{base}/reportes/{html_path.name}"
             registrar(numero, entrada, url)
             return f"Reporte {periodo} listo:\n{url}"
         except Exception as e:
