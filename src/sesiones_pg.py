@@ -102,6 +102,26 @@ def guardar_todas(sesiones: dict) -> None:
         print(f"[sesiones_pg] Error al guardar sesiones: {e}")
 
 
+def cargar_una(numero: str) -> dict | None:
+    """
+    Lee UNA sola sesión por número desde Postgres (lectura en vivo).
+    Retorna el estado dict, o None si no existe.
+
+    Es la pieza que permite que varios workers de uvicorn compartan el estado:
+    cada mensaje consulta el store en vez de un snapshot en memoria del worker.
+    """
+    try:
+        with _engine().connect() as conn:
+            fila = conn.execute(
+                text(f"SELECT estado FROM {SCHEMA}.sesiones_bot WHERE numero = :numero"),
+                {"numero": numero},
+            ).fetchone()
+        return fila[0] if fila else None
+    except Exception as e:
+        print(f"[sesiones_pg] Error al cargar sesión {numero}: {e}")
+        return None
+
+
 def guardar_una(numero: str, estado: dict) -> None:
     """
     Upsert de una sola sesión. Más eficiente que guardar_todas() para
