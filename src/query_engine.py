@@ -51,8 +51,24 @@ def run_query(
         filtro_mes = " ".join(partes[1:]).upper() if len(partes) > 1 else None
         return _listar_trabajos(filtro_mes, trabajos)
 
-    if verbo == "facturas":
-        return _listar_facturas(facturado)
+    if verbo in ("facturas", "factura"):
+        # "facturas" a secas → lista de OC facturadas (comportamiento original).
+        # "facturas <folio>" → factura por folio (si el argumento es un número).
+        # "facturas de Waldos" / "facturas Waldos" → facturas del cliente.
+        resto = [p for p in partes[1:] if p != "de"]
+        if not resto:
+            return _listar_facturas(facturado)
+        arg = " ".join(resto)
+        if arg.isdigit():
+            return _factura_por_folio(int(arg), facturas)
+        return _facturas_cliente(arg, facturas)
+
+    # "(últimas) facturas de CLIENTE" → facturas del cliente, más recientes primero.
+    if verbo in ("últimas", "ultimas", "última", "ultima") and len(partes) >= 2 \
+            and partes[1] in ("facturas", "factura"):
+        resto = [p for p in partes[2:] if p != "de"]
+        if resto:
+            return _facturas_cliente(" ".join(resto), facturas)
 
     if verbo == "pendientes":
         filtro_suc = partes[1] if len(partes) > 1 else None
@@ -645,6 +661,65 @@ def _ultimos_pagos_cliente(cliente: str, facturas: pd.DataFrame, n: int = 5) -> 
         f"Últimos pagos de {nombre}\n{linea}\n"
         + "\n".join(filas)
         + f"\n{linea}\n{len(res)} pagos encontrados"
+    )
+
+
+def _factura_por_folio(folio: int, facturas: pd.DataFrame) -> str:
+    """Busca una factura del reporte mensual por su folio (número)."""
+    if facturas.empty:
+        return "El reporte mensual de facturas no está cargado."
+    res = facturas[facturas["folio"] == folio]
+    if res.empty:
+        return f"No se encontró la factura con folio {folio}."
+    linea = "─" * 44
+    filas = []
+    for _, f in res.iterrows():
+        fecha = pd.to_datetime(f["fecha"], errors="coerce")
+        fecha = fecha.strftime("%d/%m/%Y") if pd.notna(fecha) else "sin fecha"
+        estado = "Pagada" if pd.notna(f["fecha_pago"]) else "Pendiente"
+        filas.append(
+            f"  Fac {f['folio']} | {f['cliente']} | {fecha} | ${f['total']:>12,.2f} | {estado}"
+        )
+    return f"Factura {folio}\n{linea}\n" + "\n".join(filas)
+
+
+def _facturas_cliente(cliente: str, facturas: pd.DataFrame, n: int = 15) -> str:
+    """Últimas facturas de un cliente (pagadas y pendientes), más recientes primero.
+
+    Reutiliza _mask_cliente (substring + fuzzy) —el mismo matching de las demás
+    consultas por cliente— y ordena por fecha de emisión descendente, limitando a n.
+    """
+    if facturas.empty:
+        return "El reporte mensual de facturas no está cargado."
+    res = facturas[_mask_cliente(facturas["cliente"], cliente.upper())]
+    if res.empty:
+        return f"No se encontraron facturas de '{cliente}'."
+
+    nombre = res.iloc[0]["cliente"]
+    total_encontradas = len(res)
+
+    # La fecha puede llegar como string desde Postgres; normalizar a datetime
+    # antes de ordenar/formatear (mismo criterio que el resto del pipeline).
+    res = res.copy()
+    res["fecha"] = pd.to_datetime(res["fecha"], errors="coerce")
+    res = res.sort_values("fecha", ascending=False, na_position="last").head(n)
+
+    linea = "─" * 44
+    filas = []
+    for _, f in res.iterrows():
+        fecha = f["fecha"].strftime("%d/%m/%Y") if pd.notna(f["fecha"]) else "sin fecha"
+        estado = "Pagada" if pd.notna(f["fecha_pago"]) else "Pendiente"
+        filas.append(
+            f"  Fac {f['folio']} | {fecha} | ${f['total']:>12,.2f} | {estado}"
+        )
+    total = res["total"].sum()
+    encabezado = f"Últimas {len(res)} facturas de {nombre}"
+    if total_encontradas > len(res):
+        encabezado += f" (de {total_encontradas} en total)"
+    return (
+        f"{encabezado}\n{linea}\n"
+        + "\n".join(filas)
+        + f"\n{linea}\nTotal mostrado: ${total:,.2f}"
     )
 
 
