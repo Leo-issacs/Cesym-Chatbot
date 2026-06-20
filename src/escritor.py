@@ -55,6 +55,39 @@ _COLUMNAS_TRABAJOS = [
     "Unnamed: 7", "PAGADO", "RECIBE",
 ]
 
+# Marcador para "pagado pero sin monto especificado" (algunos reportes solo
+# indican que ya se pagó, sin el importe). En el Excel se guarda este texto en la
+# columna PAGADO (igual que en los reportes reales). En Postgres, la columna es
+# numérica (NULL = sin cobrar), así que el monto se guarda como NULL.
+PAGADO_SIN_MONTO = "PAGADO"
+
+
+def _es_pagado_sin_monto(pago) -> bool:
+    return isinstance(pago, str) and pago.strip().upper() == PAGADO_SIN_MONTO
+
+
+def pago_a_numero(pago):
+    """Convierte el valor de 'pagado' a float, o None si es vacío o el marcador
+    'PAGADO' (pagado sin monto). No lanza ante texto no numérico."""
+    if pago in (None, "") or _es_pagado_sin_monto(pago):
+        return None
+    try:
+        return float(pago)
+    except (TypeError, ValueError):
+        return None
+
+
+def formato_monto_pagado(pago) -> str:
+    """Texto del estado de pago para confirmaciones y resúmenes."""
+    if pago in (None, ""):
+        return "sin cobrar"
+    if _es_pagado_sin_monto(pago):
+        return "Pagado (sin monto)"
+    try:
+        return f"${float(pago):,.2f}"
+    except (TypeError, ValueError):
+        return str(pago)
+
 
 def _obtener_o_crear_archivo_trabajos() -> Path:
     """
@@ -162,7 +195,7 @@ def _escribir_trabajo_postgres(datos: dict) -> None:
                 "domicilio":    (datos.get("domicilio") or "").strip() or None,
                 "telefono":     (datos.get("telefono") or "").strip() or None,
                 "tipo_trabajo": (datos.get("tipo_trabajo") or "").strip() or None,
-                "pagado":       float(pago) if pago not in (None, "") else None,
+                "pagado":       pago_a_numero(pago),
                 "recibe":       (datos.get("recibe") or "").strip() or None,
             }
             pg_id = escritor_pg.insertar_trabajo(conn, fila_pg)
@@ -223,7 +256,7 @@ def agregar_trabajo(datos: dict) -> str:
                 "Usa 'actualizar' para sincronizar manualmente."
             )
 
-    pago_str = f"${float(datos['pagado']):,.2f}" if datos.get("pagado") else "sin cobrar"
+    pago_str = formato_monto_pagado(datos.get("pagado"))
     return (
         f"Trabajo registrado correctamente.\n"
         f"{datos['cliente']} | {datos['tipo_trabajo']} | {pago_str}"
@@ -276,7 +309,7 @@ def _campo_a_columna_pg(conn, campo: str, valor: str) -> dict:
     if campo == "tecnico":
         return {"tecnico_id": escritor_pg.resolver_o_crear_tecnico(conn, valor)}
     if campo == "pagado":
-        return {"pagado": float(valor) if valor else None}
+        return {"pagado": pago_a_numero(valor)}
     if campo == "mes":
         return {"mes": (valor or "").strip().upper() or None}
     return {campo: valor or None}  # domicilio, telefono, tipo_trabajo, recibe
