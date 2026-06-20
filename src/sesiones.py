@@ -39,7 +39,7 @@ _PREGUNTAS_AGREGAR = {
     "domicilio":    "Domicilio del cliente:",
     "telefono":     "Telefono del cliente (o 'sin' si no hay):",
     "tipo_trabajo": "Tipo de trabajo realizado:",
-    "pagado":       "Monto cobrado (numero, ej: 1500) o 'sin cobrar':",
+    "pagado":       "Monto cobrado (ej: 1500), 'pagado' si no sabes el monto, o 'sin cobrar':",
     "recibe":       "Quien recibe o firma el trabajo:",
 }
 
@@ -67,6 +67,29 @@ def _normalizar_mes(texto: str) -> str | None:
         return t
     matches = get_close_matches(t, _MESES, n=1, cutoff=0.7)
     return matches[0] if matches else None
+
+
+# Frases que en el paso "monto cobrado" significan "pagado, monto no especificado".
+_PAGADO_MARCADORES = {
+    "pagado", "pagada", "ya pagado", "ya pagada", "ya pague", "ya pagué",
+    "ya esta pagado", "ya está pagado", "si pagado", "sí pagado",
+    "pagado sin monto", "ya quedo pagado", "ya quedó pagado",
+}
+
+
+def _normalizar_pagado(valor: str) -> str:
+    """Normaliza la respuesta al monto cobrado:
+      - "" (sin cobrar) para 'sin cobrar'/'sin'/'no'/'0'/vacío,
+      - el marcador 'PAGADO' para 'pagado'/'ya pagado'/... (pagado sin monto),
+      - el número como string (quitando $ y comas) en cualquier otro caso.
+    """
+    from src.escritor import PAGADO_SIN_MONTO
+    v = valor.lower().strip()
+    if v in ("sin cobrar", "sin", "no", "0", ""):
+        return ""
+    if v in _PAGADO_MARCADORES:
+        return PAGADO_SIN_MONTO
+    return valor.replace("$", "").replace(",", "").strip()
 
 
 # ─── Store: lectura/escritura/borrado POR NÚMERO ───────────────────────────────
@@ -189,17 +212,15 @@ def _procesar_agregar(numero: str, texto: str, sesion: dict) -> tuple[str, dict 
     elif campo == "telefono" and valor.lower() == "sin":
         valor = ""
     elif campo == "pagado":
-        if valor.lower() in ("sin cobrar", "sin", "no", "0", ""):
-            valor = ""
-        else:
-            valor = valor.replace("$", "").replace(",", "").strip()
+        valor = _normalizar_pagado(valor)
 
     sesion["datos"][campo] = valor
     sesion["paso"] += 1
 
     if sesion["paso"] >= len(_PASOS_AGREGAR):
+        from src.escritor import formato_monto_pagado
         datos = sesion["datos"]
-        pago_str = f"${float(datos['pagado']):,.2f}" if datos.get("pagado") else "sin cobrar"
+        pago_str = formato_monto_pagado(datos.get("pagado"))
         sesion["confirmando"] = True
         _escribir_sesion(numero, sesion)
         return (
@@ -312,19 +333,17 @@ def _procesar_editar(numero: str, texto: str, sesion: dict) -> tuple[str, dict |
         elif campo == "telefono" and valor.lower() == "sin":
             valor = ""
         elif campo == "pagado":
-            if valor.lower() in ("sin cobrar", "sin", "no", "0", ""):
-                valor = ""
-            else:
-                valor = valor.replace("$", "").replace(",", "").strip()
+            valor = _normalizar_pagado(valor)
 
         sesion["valor_nuevo"] = valor
         sesion["paso"] = "confirmando"
         _escribir_sesion(numero, sesion)
 
+        from src.escritor import formato_monto_pagado
         _, label = _CAMPOS_EDITABLES[next(i for i, c in enumerate(_CAMPOS_EDITABLES) if c[0] == campo)]
         r = sesion["seleccionado"]
         valor_actual = r.get(campo) or "vacío"
-        valor_mostrar = f"${float(valor):,.2f}" if campo == "pagado" and valor else valor or "vacío"
+        valor_mostrar = formato_monto_pagado(valor) if campo == "pagado" else (valor or "vacío")
         return (
             f"Confirmar cambio:\n\n"
             f"Campo   : {label}\n"
