@@ -17,15 +17,18 @@ logger = logging.getLogger(__name__)
 
 
 def crear_cliente(conn, rfc, nombre_fiscal, nombre_comercial, tipo="empresa") -> str:
-    """Upsert idempotente de cliente por RFC. Devuelve el RFC."""
+    """Inserta el cliente si no existe (idempotente, no sobrescribe). Devuelve el RFC.
+
+    Usa ON CONFLICT DO NOTHING (no DO UPDATE) a propósito: solo requiere privilegio
+    INSERT, acorde al rol least-privilege `cesym_app` (SELECT, INSERT en clientes,
+    sin UPDATE). Postgres exige UPDATE para ejecutar ON CONFLICT DO UPDATE aunque no
+    haya conflicto, lo que rompería la creación de clientes nuevos con ese rol. Los
+    nombres se afinan al migrar los CFDI (Fase 4), no por re-seed."""
     conn.execute(
         text("""
             INSERT INTO clientes (rfc, nombre_fiscal, nombre_comercial, tipo)
             VALUES (:rfc, :nf, :nc, :tipo)
-            ON CONFLICT (rfc) DO UPDATE
-                SET nombre_fiscal = excluded.nombre_fiscal,
-                    nombre_comercial = excluded.nombre_comercial,
-                    tipo = excluded.tipo
+            ON CONFLICT (rfc) DO NOTHING
         """),
         {"rfc": rfc, "nf": nombre_fiscal, "nc": nombre_comercial, "tipo": tipo},
     )
