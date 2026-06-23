@@ -29,8 +29,10 @@ from fastapi.responses import FileResponse
 from src.cli import _cargar_dotenv, _cargar_datos, _sincronizar_drive
 from src.query_engine import run_query
 from src import reporte_excel
-from src.sesiones import tiene_sesion, iniciar, iniciar_editar, iniciar_borrar, procesar, cancelar
+from src.sesiones import (tiene_sesion, iniciar, iniciar_editar, iniciar_borrar,
+                          procesar, cancelar, iniciar_cotizacion)
 from src.escritor import agregar_trabajo, editar_trabajo, borrar_trabajo
+from src.cotizaciones_pg import guardar_cotizacion
 from src.logger import registrar, leer_recientes
 from src.seguridad import verificar_peticion, numero_autorizado, _numeros_autorizados
 
@@ -207,6 +209,15 @@ def _twiml(texto: str) -> Response:
 _TRIGGERS_AGREGAR = ["agregar trabajo", "nuevo trabajo", "registrar trabajo"]
 _TRIGGERS_EDITAR  = ["editar trabajo", "modificar trabajo", "corregir trabajo"]
 _TRIGGERS_BORRAR  = ["borrar trabajo", "eliminar trabajo", "cancelar trabajo"]
+_TRIGGERS_COTIZAR = ["nueva cotizacion", "nueva cotización", "cotizar",
+                     "cotizacion", "cotización"]
+
+
+def _es_cotizar(texto: str) -> bool:
+    t = texto.lower().strip()
+    if t in _TRIGGERS_COTIZAR:
+        return True
+    return bool(get_close_matches(t, _TRIGGERS_COTIZAR, n=1, cutoff=0.82))
 
 
 def _es_agregar_trabajo(texto: str) -> bool:
@@ -658,6 +669,12 @@ async def _procesar_mensaje(numero: str, entrada: str) -> str:
     if tiene_sesion(numero):
         mensaje, datos_completos = procesar(numero, entrada)
         if datos_completos is not None:
+            # Cotización → cesym_db (BD consolidada), NO chatbot_db. No se llama
+            # _recargar_datos (eso recarga la cartera de chatbot_db, ajeno a esto).
+            if datos_completos.get("tipo") == "cotizacion":
+                resultado = guardar_cotizacion(datos_completos)
+                registrar(numero, entrada, resultado)
+                return resultado
             # TODO:ASYNC — agregar/editar/borrar escriben Excel y suben a Drive de
             # forma síncrona (puede tardar >5s con Drive lento) y luego
             # _recargar_datos relee todo; mover a un executor o background task.
@@ -702,6 +719,10 @@ async def _procesar_mensaje(numero: str, entrada: str) -> str:
     # Iniciar flujo de registro (con tolerancia a typos)
     if _es_agregar_trabajo(entrada):
         return iniciar(numero)
+
+    # Iniciar flujo de cotización (cesym_db)
+    if _es_cotizar(entrada):
+        return iniciar_cotizacion(numero)
 
     if not _hay_datos() and entrada.lower() != "actualizar":
         return (
