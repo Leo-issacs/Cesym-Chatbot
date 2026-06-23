@@ -109,7 +109,8 @@ CLIENTES_SEED = [
     ("OOM090327365", "OHD OPERATORS DE MEXICO",       "GENIE"),
 ]
 ```
-Upsert idempotente (`ON CONFLICT (rfc) DO UPDATE` de nombres, `tipo='empresa'`).
+Insert idempotente (`ON CONFLICT (rfc) DO NOTHING`, `tipo='empresa'`); no sobrescribe
+nombres (se afinan al migrar CFDI). Solo requiere INSERT → acorde al rol `cesym_app`.
 Conecta vía `CESYM_DB_URL`. Correrlo dos veces = 3 clientes, sin error.
 
 ## Rol `cesym_app` (least-privilege)

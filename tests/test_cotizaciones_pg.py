@@ -29,14 +29,17 @@ def engine():
     return eng
 
 
-def test_crear_cliente_idempotente(engine):
+def test_crear_cliente_idempotente_no_sobrescribe(engine):
+    """ON CONFLICT DO NOTHING: re-crear el mismo RFC no duplica ni sobrescribe."""
     with engine.begin() as conn:
         cpg.crear_cliente(conn, "WDM990126350", "WALDOS DOLAR MART", "WALDOS")
-        cpg.crear_cliente(conn, "WDM990126350", "WALDOS DOLAR MART", "WALDOS")
+        # Segunda vez con otros nombres: no falla y NO sobrescribe (DO NOTHING).
+        cpg.crear_cliente(conn, "WDM990126350", "OTRO NOMBRE", "OTRO")
     with engine.connect() as conn:
         n = conn.execute(text("SELECT COUNT(*) FROM clientes")).scalar()
+        nf = conn.execute(text("SELECT nombre_fiscal FROM clientes")).scalar()
         tipo = conn.execute(text("SELECT tipo FROM clientes")).scalar()
-    assert n == 1 and tipo == "empresa"
+    assert n == 1 and nf == "WALDOS DOLAR MART" and tipo == "empresa"
 
 
 def test_crear_sucursal_devuelve_id(engine):
