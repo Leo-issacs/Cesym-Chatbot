@@ -28,9 +28,19 @@ ACTIVACIÓN:
   Este módulo se usa cuando USE_POSTGRES_READS=1, que es el DEFAULT desde PR-14.
   Con USE_POSTGRES_READS=0 se fuerza la lectura desde Excel. Si la lectura de
   Postgres falla, cli._cargar_datos cae a Excel automáticamente.
+
+PENDIENTE DESDE cesym_db (detrás de flag, APAGADO por default):
+  Con USE_CESYM_DB_PENDIENTE=1, SOLO el DataFrame `pendiente` se lee desde la
+  vista `chatbot_pendiente_v1` de cesym_db (conexión CESYM_DB_URL, la misma
+  del flujo de cotizaciones — independiente de DATABASE_URL). Los otros tres
+  DataFrames no cambian. Si la vista falla por cualquier razón, se loggea el
+  error y se usa el `pendiente` de chatbot_db ya leído (fallback sin romper).
+  Contexto: la vista fue validada 59/59 contra chatbot_db el 2026-07-11
+  (Cesym/04-auditorias/2026-07-11-puente-pendiente-cierre-59de59.md).
 """
 
 import logging
+import os
 
 import pandas as pd
 from sqlalchemy import text
@@ -103,9 +113,54 @@ ORDER BY t.id;
 """
 
 
+# La vista vive en el schema public de cesym_db (no en el schema chatbot).
+# ORDER BY estable: la vista no tiene id; cot es único salvo folios repetidos
+# con sucursal distinta (caso documentado), así que (cot, suc) es determinista.
+_SQL_PENDIENTE_CESYM = """
+SELECT cot, suc, importe, concepto
+FROM chatbot_pendiente_v1
+ORDER BY cot NULLS LAST, suc NULLS LAST;
+"""
+
+
+def _flag_pendiente_cesym() -> bool:
+    """USE_CESYM_DB_PENDIENTE=1 activa la lectura de `pendiente` desde cesym_db.
+    Default '0' (apagado): el comportamiento actual queda intacto."""
+    return os.environ.get("USE_CESYM_DB_PENDIENTE", "0") == "1"
+
+
+def _entero_compatible(serie: pd.Series) -> pd.Series:
+    """Deja cot/suc con el mismo dtype que produce la ruta chatbot (int64)
+    cuando no hay nulos; si los hay (p. ej. suc NULL en una cotización sin
+    sucursal), usa Int64 nullable en vez de degradar a float64 con .0"""
+    numerica = pd.to_numeric(serie, errors="coerce")
+    if numerica.isna().any():
+        return numerica.astype("Int64")
+    return numerica.astype("int64")
+
+
+def _cargar_pendiente_desde_cesym(cesym_engine=None) -> pd.DataFrame:
+    """Lee `pendiente` desde cesym_db.chatbot_pendiente_v1 y lo normaliza al
+    contrato exacto del query engine (cot, suc, importe, concepto)."""
+    if cesym_engine is None:
+        # import perezoso: sin el flag, este módulo no depende de cesym_db
+        from src.cesym_db import get_cesym_engine
+        cesym_engine = get_cesym_engine()
+    with cesym_engine.connect() as conn:
+        pendiente = pd.read_sql(text(_SQL_PENDIENTE_CESYM), conn)
+    pendiente = pendiente[["cot", "suc", "importe", "concepto"]]
+    pendiente["cot"] = _entero_compatible(pendiente["cot"])
+    pendiente["suc"] = _entero_compatible(pendiente["suc"])
+    pendiente["importe"] = pd.to_numeric(pendiente["importe"], errors="coerce")
+    pendiente["concepto"] = (
+        pendiente["concepto"].fillna("").astype(str).replace("nan", "")
+    )
+    return pendiente
+
+
 # ─── Función pública ─────────────────────────────────────────────────────────────
 
-def cargar_datos_desde_postgres(engine=None) -> tuple[
+def cargar_datos_desde_postgres(engine=None, cesym_engine=None) -> tuple[
     pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, list[str]
 ] | None:
     """
@@ -144,6 +199,22 @@ def cargar_datos_desde_postgres(engine=None) -> tuple[
     _limpiar(facturas_mensual, ["cliente", "concepto"])
     _limpiar(trabajos,         ["mes", "tecnico", "cliente", "rep_num",
                                 "domicilio", "telefono", "tipo_trabajo", "recibe"])
+
+    # Detrás de flag (default apagado): `pendiente` desde cesym_db. Se intenta
+    # DESPUÉS de tener el pendiente de chatbot_db en mano, para que cualquier
+    # fallo (URL ausente, permiso, red, vista borrada) caiga a lo ya leído sin
+    # romper el bot ni afectar a los otros tres DataFrames.
+    if _flag_pendiente_cesym():
+        try:
+            pendiente = _cargar_pendiente_desde_cesym(cesym_engine)
+            logger.info("[datos_postgres] pendiente leído desde cesym_db.chatbot_pendiente_v1")
+        except Exception as exc:  # noqa: BLE001 - fallback deliberado, se loggea
+            logger.error(
+                "[datos_postgres] USE_CESYM_DB_PENDIENTE=1 pero la lectura de "
+                f"cesym_db.chatbot_pendiente_v1 falló; se usa el pendiente de "
+                f"chatbot_db como fallback: {exc}"
+            )
+            advertencias.append("[PG] pendiente: fallback a chatbot_db (cesym_db falló)")
 
     if facturado.empty:
         advertencias.append("[PG] ordenes_compra OC_EMITIDA está vacía")

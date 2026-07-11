@@ -75,6 +75,32 @@ El objetivo de diseño es que el switch sea **transparente**: los DataFrames de
 Postgres tienen exactamente las mismas columnas que produce `cleaner.py`, para que
 `query_engine.py` no note la diferencia.
 
+#### 1.2.1 `pendiente` desde cesym_db (flag, APAGADO por default)
+
+`USE_CESYM_DB_PENDIENTE=1` hace que **solo** el DataFrame `pendiente` se lea
+desde la vista **`cesym_db.chatbot_pendiente_v1`** (misma conexión
+`CESYM_DB_URL` del flujo de cotizaciones; rol de solo lectura `chatbot_ro`).
+Los otros tres DataFrames siguen saliendo del schema `chatbot`. La vista fue
+validada **59/59** contra `chatbot_db` el 2026-07-11 (auditorías en el
+cowork: `2026-07-11-puente-pendiente-cierre-59de59.md`); trae una fila extra
+legítima (una cotización capturada directo en `cesym_db` sin equivalente en
+el Excel/chatbot — con el flag activo, el bot la verá, que es el objetivo).
+
+Fallback: si la vista falla por lo que sea (URL ausente, permisos, red), se
+loggea el error, se agrega una advertencia y se usa el `pendiente` de
+`chatbot_db` que ya se había leído — el bot no se rompe.
+
+**Activación en producción (pasos pendientes, en orden):**
+1. `ALTER ROLE chatbot_ro LOGIN PASSWORD '…'` (hoy es NOLOGIN a propósito) —
+   password generado en el momento, directo al gestor de secretos.
+2. Definir `CESYM_DB_URL` en las variables del servicio apuntando con el rol
+   `chatbot_ro` (si el flujo de cotizaciones ya usa `cesym_app`, evaluar si
+   se comparte URL o se agrega una de solo lectura).
+3. `USE_CESYM_DB_PENDIENTE=1`.
+4. Shadow read antes y después (script:
+   `Cesym/06-referencias/etl-operativo/shadow_read_pendiente.sql`).
+5. **Rollback = `USE_CESYM_DB_PENDIENTE=0`** (env var, sin deploy).
+
 ### 1.3 El contrato de columnas (lo que `query_engine.py` exige)
 
 `query_engine.py` accede a columnas por nombre (`facturado["monto_actual"]`,
