@@ -167,6 +167,7 @@ Plantilla completa en `.env.example`. En local se cargan desde `.env`
 | `USE_POSTGRES_READS` | `1` | `cli.py` | `1` (default) = lee de Postgres; `0` = fuerza Excel. Cae a Excel si Postgres falla. |
 | `USE_POSTGRES_WRITES` | `0` (código); **`1` en Railway** | `escritor.py` | `1` = escribe trabajos nuevos en Postgres (`chatbot.trabajos`) además del Excel (best-effort, Excel siempre). `0` = solo Excel. **Activo en producción desde 2026-06-15.** Rollback: poner `0` en Railway (ver `docs/runbooks/rollback-dual-write.md`). |
 | `USE_POSTGRES_SESSIONS` | `0` | `sesiones.py` | `1` = sesiones en `chatbot.sesiones_bot` en vez de JSON. |
+| `USE_CESYM_DB_PENDIENTE` | `0` | `datos_postgres.py` | `1` = SOLO el DataFrame `pendiente` se lee de la vista `cesym_db.chatbot_pendiente_v1` (vía `CESYM_DB_URL`, rol solo-lectura); los demás no cambian. Si la vista falla, cae al `pendiente` de `chatbot_db`. Rollback: `0`. Ver `docs/DATA_FLOW.md` §1.2.1. |
 | `DRIVE_FOLDER_ID` | — | `cli`, `webhook`, `escritor`, `logger`, `sesiones` | Carpeta de Drive con los Excel. Sin esto, no hay sync. |
 | `DRIVE_BACKUPS_FOLDER_ID` | — | `escritor.py` | Carpeta de Drive para backups de Excel. |
 | `DRIVE_REPORTS_FOLDER_ID` | — | `webhook.py` | Carpeta de Drive para reportes generados. |
