@@ -7,6 +7,10 @@ Flag USE_CESYM_DB_PENDIENTE (default APAGADO): `pendiente` desde la vista
 Herméticos: sin BD. Se simulan los engines (objetos con .connect() de
 contexto) y se intercepta pd.read_sql dentro del módulo para despachar
 DataFrames sintéticos según el SQL que llega.
+
+Sección aparte (al final): CESYM_DB_READ_URL vs CESYM_DB_URL — confirma que
+la lectura de `pendiente` prefiere el rol de solo lectura sin depender de
+(ni tocar) la variable que usan las escrituras de cotizaciones.
 """
 from contextlib import contextmanager
 
@@ -139,3 +143,84 @@ def test_flag_no_afecta_los_otros_dataframes(monkeypatch):
     pd.testing.assert_frame_equal(fact_off, fact_on)
     pd.testing.assert_frame_equal(mens_off, mens_on)
     pd.testing.assert_frame_equal(trab_off, trab_on)
+
+
+# ─── CESYM_DB_READ_URL vs CESYM_DB_URL ────────────────────────────────────────
+#
+# Estas pruebas NO inyectan `cesym_engine` (a diferencia de las de arriba, que
+# usan `_EngineFalso` directo) — dejan que `_cargar_pendiente_desde_cesym`
+# arme el engine solo, para ejercitar de verdad la elección de URL.
+
+_URL_LECTURA = "postgresql://chatbot_ro:x@localhost:5432/cesym_db"
+_URL_ESCRITURA = "postgresql://cesym_app:y@localhost:5432/cesym_db"
+
+
+def test_usa_cesym_db_read_url_si_existe(monkeypatch):
+    """Con CESYM_DB_READ_URL definida, se conecta con ESA url, no con
+    CESYM_DB_URL (aunque ambas estén presentes)."""
+    monkeypatch.setenv("CESYM_DB_READ_URL", _URL_LECTURA)
+    monkeypatch.setenv("CESYM_DB_URL", _URL_ESCRITURA)
+    monkeypatch.setattr(dp.pd, "read_sql", _read_sql_falso())
+
+    import src.cesym_db as cdb
+    capturado = {}
+
+    def _get_cesym_engine_falso(url=None):
+        capturado["url"] = url
+        return _EngineFalso("cesym")
+
+    monkeypatch.setattr(cdb, "get_cesym_engine", _get_cesym_engine_falso)
+    dp._cargar_pendiente_desde_cesym()
+    assert capturado["url"] == _URL_LECTURA
+
+
+def test_sin_read_url_cae_a_cesym_db_url(monkeypatch):
+    """Sin CESYM_DB_READ_URL, get_cesym_engine (la función real, sin mockear)
+    cae a CESYM_DB_URL — se prueba con la firma real de principio a fin;
+    solo se intercepta create_engine para no requerir una BD de verdad."""
+    monkeypatch.delenv("CESYM_DB_READ_URL", raising=False)
+    monkeypatch.setenv("CESYM_DB_URL", _URL_ESCRITURA)
+    monkeypatch.setattr(dp.pd, "read_sql", _read_sql_falso())
+
+    import src.cesym_db as cdb
+    capturado = {}
+
+    def _create_engine_falso(url, **kwargs):
+        capturado["url"] = url
+        return _EngineFalso("cesym")
+
+    monkeypatch.setattr(cdb, "create_engine", _create_engine_falso)
+    dp._cargar_pendiente_desde_cesym()
+    assert capturado["url"] == _URL_ESCRITURA
+
+
+def test_sin_ninguna_url_cae_a_chatbot_con_log_claro(monkeypatch, caplog):
+    """Ni CESYM_DB_READ_URL ni CESYM_DB_URL definidas: no debe reventar —
+    cae al `pendiente` de chatbot_db con un log que explique por qué."""
+    monkeypatch.delenv("CESYM_DB_READ_URL", raising=False)
+    monkeypatch.delenv("CESYM_DB_URL", raising=False)
+    monkeypatch.setattr(dp.pd, "read_sql", _read_sql_falso())
+
+    with caplog.at_level("ERROR"):
+        _, pendiente, _, _, adv = _cargar(monkeypatch, flag="1", cesym_engine=None)
+    pd.testing.assert_frame_equal(pendiente, _PENDIENTE_BOT)
+    assert any("CESYM_DB_URL" in r.message for r in caplog.records)
+    assert any("fallback" in a for a in adv)
+
+
+def test_cesym_db_url_de_escritura_no_se_modifica(monkeypatch):
+    """Usar CESYM_DB_READ_URL para la lectura no debe tocar CESYM_DB_URL —
+    las escrituras de cotizaciones (cesym_db.py, cotizaciones_pg.py) siguen
+    viendo exactamente el mismo valor antes y después."""
+    monkeypatch.setenv("CESYM_DB_READ_URL", _URL_LECTURA)
+    monkeypatch.setenv("CESYM_DB_URL", _URL_ESCRITURA)
+    monkeypatch.setattr(dp.pd, "read_sql", _read_sql_falso())
+
+    import src.cesym_db as cdb
+    monkeypatch.setattr(cdb, "get_cesym_engine", lambda url=None: _EngineFalso("cesym"))
+
+    import os
+    antes = os.environ.get("CESYM_DB_URL")
+    dp._cargar_pendiente_desde_cesym()
+    despues = os.environ.get("CESYM_DB_URL")
+    assert antes == despues == _URL_ESCRITURA

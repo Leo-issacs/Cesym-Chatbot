@@ -31,12 +31,21 @@ ACTIVACIÓN:
 
 PENDIENTE DESDE cesym_db (detrás de flag, APAGADO por default):
   Con USE_CESYM_DB_PENDIENTE=1, SOLO el DataFrame `pendiente` se lee desde la
-  vista `chatbot_pendiente_v1` de cesym_db (conexión CESYM_DB_URL, la misma
-  del flujo de cotizaciones — independiente de DATABASE_URL). Los otros tres
-  DataFrames no cambian. Si la vista falla por cualquier razón, se loggea el
-  error y se usa el `pendiente` de chatbot_db ya leído (fallback sin romper).
+  vista `chatbot_pendiente_v1` de cesym_db. Los otros tres DataFrames no
+  cambian. Si la vista falla por cualquier razón, se loggea el error y se usa
+  el `pendiente` de chatbot_db ya leído (fallback sin romper).
   Contexto: la vista fue validada 59/59 contra chatbot_db el 2026-07-11
   (Cesym/04-auditorias/2026-07-11-puente-pendiente-cierre-59de59.md).
+
+  CESYM_DB_READ_URL vs CESYM_DB_URL:
+    CESYM_DB_URL ya está en uso por el flujo de captura de cotizaciones con
+    el rol de ESCRITURA `cesym_app` (src/cesym_db.py, cotizaciones_pg.py) —
+    reapuntarla a un rol de solo lectura rompería esas escrituras. Por eso
+    esta lectura de `pendiente` usa una variable aparte:
+      CESYM_DB_READ_URL, si existe → rol de solo lectura `chatbot_ro`.
+      Si no existe, cae a CESYM_DB_URL (compatibilidad; get_cesym_engine ya
+      hace ese fallback internamente cuando se le pasa url=None).
+    CESYM_DB_URL de escritura NUNCA se toca desde aquí.
 """
 
 import logging
@@ -141,11 +150,18 @@ def _entero_compatible(serie: pd.Series) -> pd.Series:
 
 def _cargar_pendiente_desde_cesym(cesym_engine=None) -> pd.DataFrame:
     """Lee `pendiente` desde cesym_db.chatbot_pendiente_v1 y lo normaliza al
-    contrato exacto del query engine (cot, suc, importe, concepto)."""
+    contrato exacto del query engine (cot, suc, importe, concepto).
+
+    Usa CESYM_DB_READ_URL (rol solo-lectura chatbot_ro) si está definida; si
+    no, cae a CESYM_DB_URL (rol de escritura cesym_app, compatibilidad) sin
+    tocar esa variable ni afectar las escrituras de cotizaciones que la usan."""
     if cesym_engine is None:
         # import perezoso: sin el flag, este módulo no depende de cesym_db
         from src.cesym_db import get_cesym_engine
-        cesym_engine = get_cesym_engine()
+        url_lectura = os.environ.get("CESYM_DB_READ_URL")
+        fuente = "CESYM_DB_READ_URL" if url_lectura else "CESYM_DB_URL (sin CESYM_DB_READ_URL, fallback)"
+        logger.info(f"[datos_postgres] pendiente/cesym_db: conectando via {fuente}")
+        cesym_engine = get_cesym_engine(url_lectura or None)
     with cesym_engine.connect() as conn:
         pendiente = pd.read_sql(text(_SQL_PENDIENTE_CESYM), conn)
     pendiente = pendiente[["cot", "suc", "importe", "concepto"]]
