@@ -325,12 +325,12 @@ def _puede_ver_logs(numero: str) -> bool:
 # ─── Endpoints ─────────────────────────────────────────────────────────────────
 @app.get("/")
 async def health():
-    """Health check — también muestra cuántos registros hay cargados."""
-    return {
-        "status": "ok",
-        "registros": {k: len(v) for k, v in _datos.items()},
-        "ia": _cliente_ia is not None,
-    }
+    """Health check público: solo confirma que el servicio responde.
+
+    No expone conteos de registros ni el estado de la IA, porque el dominio
+    es público (cesymhvac.com).
+    """
+    return {"status": "ok"}
 
 
 @app.get("/reportes/{filename}")
