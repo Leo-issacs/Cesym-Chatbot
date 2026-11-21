@@ -147,7 +147,7 @@ Si el servidor aparece en rojo (crash), revisar los logs en el dashboard de Rail
 https://web-production-2bb2c.up.railway.app
 ```
 
-- `GET /` — health check, muestra cuántos registros hay cargados
+- `GET /` — health check público; solo responde `{"status": "ok"}`
 - `POST /webhook` — endpoint que usa Twilio
 
 ---
